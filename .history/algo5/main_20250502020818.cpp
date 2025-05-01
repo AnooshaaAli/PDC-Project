@@ -208,9 +208,11 @@ vector<int> find_seed_candidates() {
     for (const auto &[v, _] : graph) {
         unordered_map<int, double> level_sum;
         unordered_map<int, int> level_count;
-        queue<pair<int, int>> q;
-        set<int> visited;
+        double prev_IL = numeric_limits<double>::max();
+        int L0 = -1;
 
+        queue<pair<int, int>> q; 
+        set<int> visited;
         q.push({v, 0});
         visited.insert(v);
 
@@ -225,27 +227,27 @@ vector<int> find_seed_candidates() {
                     q.push({nbr, lvl + 1});
                 }
             }
+
+            // Influence drop check (IL(L) > IL(L+1))
+            if (lvl > 0 && level_count.count(lvl) && level_count.count(lvl - 1)) {
+                double curr_IL = level_sum[lvl] / level_count[lvl];
+                double prev_IL_temp = level_sum[lvl - 1] / level_count[lvl - 1];
+                if (curr_IL >= prev_IL_temp) {
+                    L0 = lvl - 1;
+                    break;
+                }
+            }
         }
 
-        int L0 = -1;
-        double prev_IL = 1e9;
+if (L0 == -1 || level_count[L0] == 0) {
+    cout << "Node " << v << ": No L0 found\n";
+    continue;
+}
 
-        for (int L = 1; level_count.count(L); ++L) {
-            double IL = level_sum[L] / level_count[L];
-            double IL_prev = level_sum[L - 1] / level_count[L - 1];
 
-            if (IL >= IL_prev) {
-                L0 = L - 1;
-                break;
-            }
-            prev_IL = IL;
-        }
-
-        if (L0 != -1 && level_count[L0] > 0) {
-            double IL0 = level_sum[L0] / level_count[L0];
-            if (IP[v] > IL0) {
-                seeds.push_back(v);
-            }
+        double local_IL = level_sum[L0] / level_count[L0];
+        if (IP[v] > local_IL) {
+            seeds.push_back(v);
         }
     }
 

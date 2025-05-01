@@ -120,7 +120,7 @@ double compute_psi(int u, int v) {
 
     ActionCount &a = action_map[u][v];
     // cout << "Num Retweets: " << a.RT << ", Mentions: " << a.MT << ", Num Replies: " << a.RE << endl;
-    double weighted = get_action_weight("RT") * sim * a.RT + get_action_weight("RE") * sim * a.RE + get_action_weight("MT") * sim * a.MT;
+    double weighted = get_action_weight * sim * a.RT + 0.35 * sim * a.RE + 0.15 * sim * a.MT;
     return weighted / total_posts[v];
 }
 
@@ -177,7 +177,7 @@ void compute_influence_power(const vector<int> &nodes) {
     } while (delta > EPSILON && iter < MAX_ITER);
 }
 
-void calculate_influence_power() {
+void run_algorithm_5() {
     vector<int> levels;
     for (const auto &[level, _] : level_components)
         levels.push_back(level);
@@ -208,7 +208,8 @@ vector<int> find_seed_candidates() {
     for (const auto &[v, _] : graph) {
         unordered_map<int, double> level_sum;
         unordered_map<int, int> level_count;
-        queue<pair<int, int>> q;
+
+        queue<pair<int, int>> q; 
         set<int> visited;
 
         q.push({v, 0});
@@ -216,6 +217,7 @@ vector<int> find_seed_candidates() {
 
         while (!q.empty()) {
             auto [u, lvl] = q.front(); q.pop();
+
             level_sum[lvl] += IP[u];
             level_count[lvl]++;
 
@@ -227,25 +229,23 @@ vector<int> find_seed_candidates() {
             }
         }
 
-        int L0 = -1;
         double prev_IL = 1e9;
+        int L0 = -1;
 
         for (int L = 1; level_count.count(L); ++L) {
-            double IL = level_sum[L] / level_count[L];
-            double IL_prev = level_sum[L - 1] / level_count[L - 1];
-
-            if (IL >= IL_prev) {
+            double curr_IL = level_sum[L] / level_count[L];
+            if (curr_IL >= prev_IL) {
                 L0 = L - 1;
                 break;
             }
-            prev_IL = IL;
+            prev_IL = curr_IL;
         }
 
-        if (L0 != -1 && level_count[L0] > 0) {
-            double IL0 = level_sum[L0] / level_count[L0];
-            if (IP[v] > IL0) {
-                seeds.push_back(v);
-            }
+        if (L0 == -1) continue;
+
+        double final_IL = level_sum[L0] / level_count[L0];
+        if (IP[v] > final_IL) {
+            seeds.push_back(v);
         }
     }
 
@@ -259,7 +259,7 @@ int main() {
     load_component_map("components.txt");
     load_component_levels("component_levels.txt");
     initialize_ip();
-    calculate_influence_power();
+    run_algorithm_5();
     output_IP();
     auto seeds = find_seed_candidates();
     cout << "\nSeed Candidates:\n";
