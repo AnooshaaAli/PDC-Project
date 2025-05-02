@@ -208,7 +208,8 @@ vector<int> find_seed_candidates() {
     for (const auto &[v, _] : graph) {
         unordered_map<int, double> level_sum;
         unordered_map<int, int> level_count;
-        queue<pair<int, int>> q;
+
+        queue<pair<int, int>> q; 
         set<int> visited;
 
         q.push({v, 0});
@@ -216,6 +217,7 @@ vector<int> find_seed_candidates() {
 
         while (!q.empty()) {
             auto [u, lvl] = q.front(); q.pop();
+
             level_sum[lvl] += IP[u];
             level_count[lvl]++;
 
@@ -227,25 +229,23 @@ vector<int> find_seed_candidates() {
             }
         }
 
-        int L0 = -1;
         double prev_IL = 1e9;
+        int L0 = -1;
 
         for (int L = 1; level_count.count(L); ++L) {
-            double IL = level_sum[L] / level_count[L];
-            double IL_prev = level_sum[L - 1] / level_count[L - 1];
-
-            if (IL >= IL_prev) {
+            double curr_IL = level_sum[L] / level_count[L];
+            if (curr_IL >= prev_IL) {
                 L0 = L - 1;
                 break;
             }
-            prev_IL = IL;
+            prev_IL = curr_IL;
         }
 
-        if (L0 != -1 && level_count[L0] > 0) {
-            double IL0 = level_sum[L0] / level_count[L0];
-            if (IP[v] > IL0) {
-                seeds.push_back(v);
-            }
+        if (L0 == -1) continue;
+
+        double final_IL = level_sum[L0] / level_count[L0];
+        if (IP[v] > final_IL) {
+            seeds.push_back(v);
         }
     }
 

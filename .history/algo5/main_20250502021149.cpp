@@ -230,6 +230,7 @@ vector<int> find_seed_candidates() {
         int L0 = -1;
         double prev_IL = 1e9;
 
+        // Find L0 where IL stops decreasing
         for (int L = 1; level_count.count(L); ++L) {
             double IL = level_sum[L] / level_count[L];
             double IL_prev = level_sum[L - 1] / level_count[L - 1];
