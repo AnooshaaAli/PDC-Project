@@ -14,6 +14,7 @@
 #include <cmath>
 #include <omp.h>
 #include <climits>
+#include <mpi.h>
 
 #define MAX_TOPICS 10
 #define DAMPING 0.85
@@ -73,21 +74,11 @@ void discover(int v);
 void explore(int v);
 void finish(int v);
 
-vector<vector<DirectedEdge>> run_metis_partitioning(
-    const string &filename,
-    int nparts,
-    set<int> partition_nodes[]);
-vector<DirectedEdge> remap_partition_edges(
-    const vector<DirectedEdge> &edges,
-    const vector<int> &nodes,
-    map<int, int> &node_to_index,
-    map<int, int> &index_to_node);
-void display_partition_results(
-    const map<int, int> &index_to_node,
-    const vector<Vertex> &vertices,
-    const vector<DirectedEdge> &remapped_edges,
-    const map<int, int> &node_to_index,
-    int partition_id);
+vector<vector<DirectedEdge>> run_metis_partitioning(const string &filename, int nparts, set<int> partition_nodes[]);
+vector<DirectedEdge> remap_partition_edges(const vector<DirectedEdge> &edges, const vector<int> &nodes, map<int, int> &node_to_index, map<int, int> &index_to_node);
+void display_partition_results(const map<int, int> &index_to_node, const vector<Vertex> &vertices, const vector<DirectedEdge> &remapped_edges, const map<int, int> &node_to_index, int partition_id);
+
+// Algorithm 1-4 and METIS functions
 
 void discover(int v)
 {
@@ -220,10 +211,7 @@ void SCC_CAC_partition(const std::vector<DirectedEdge> &edges, int n)
     }
 }
 
-vector<vector<DirectedEdge>> run_metis_partitioning(
-    const string &filename,
-    int nparts,
-    set<int> partition_nodes[])
+vector<vector<DirectedEdge>> run_metis_partitioning(const string &filename, int nparts, set<int> partition_nodes[])
 {
     ifstream file(filename);
     if (!file.is_open())
@@ -296,11 +284,7 @@ vector<vector<DirectedEdge>> run_metis_partitioning(
     return partitioned_edges;
 }
 
-vector<DirectedEdge> remap_partition_edges(
-    const vector<DirectedEdge> &edges,
-    const set<int> &node_ids,
-    map<int, int> &node_to_index_out,
-    map<int, int> &index_to_node_out)
+vector<DirectedEdge> remap_partition_edges(const vector<DirectedEdge> &edges, const set<int> &node_ids, map<int, int> &node_to_index_out, map<int, int> &index_to_node_out)
 {
     int index = 0;
 
@@ -325,12 +309,7 @@ vector<DirectedEdge> remap_partition_edges(
     return remapped_edges;
 }
 
-void display_partition_results(
-    const map<int, int> &index_to_node,
-    const vector<Vertex> &vertices,
-    const vector<DirectedEdge> &remapped_edges,
-    const map<int, int> &node_to_index,
-    int partition_id)
+void display_partition_results(const map<int, int> &index_to_node, const vector<Vertex> &vertices, const vector<DirectedEdge> &remapped_edges, const map<int, int> &node_to_index, int partition_id)
 {
     cout << "\n--- SCC/CAC for Partition " << partition_id << " ---\n";
 
@@ -380,6 +359,23 @@ void display_partition_results(
     level_out.close();
     edge_out.close();
 }
+
+void write_activity_file(const vector<DirectedEdge>& remapped_edges, const map<int, int>& index_to_node, const string& filename) {
+    ofstream f(filename);
+    for (const auto& edge : remapped_edges) {
+        int from = index_to_node.at(edge.from);
+        int to = index_to_node.at(edge.to);
+        for (int i = 0; i < edge.retweet; ++i)
+            f << from << " " << to << " RT" << endl;
+        for (int i = 0; i < edge.reply; ++i)
+            f << from << " " << to << " RE" << endl;
+        for (int i = 0; i < edge.mention; ++i)
+            f << from << " " << to << " MT" << endl;
+    }
+    f.close();
+}
+
+// Algorithm 5-6 functions
 
 double get_action_weight(const string &act)
 {
@@ -687,6 +683,7 @@ void clear_maps()
     followers.clear();
 }
 
+// Algorithm 7 functions
 BFS_Tree influence_bfs_tree(int seed, const unordered_set<int> &seed_set)
 {
     BFS_Tree tree;
@@ -826,30 +823,48 @@ vector<int> seed_selection_algorithm(const vector<int> &initial_seeds)
     return final_seeds;
 }
 
-int main()
-{
-    const string filename = "initial_dataset.txt";
-    const int nparts = 2;
+int main(int argc, char** argv) {
+    MPI_Init(&argc, &argv);
 
-    set<int> partition_nodes[nparts];
-    vector<vector<DirectedEdge>> partitioned_edges =
-        run_metis_partitioning(filename, nparts, partition_nodes);
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    for (int p = 0; p < nparts; ++p)
-    {
-        cout << "\n--- SCC/CAC for Partition " << p << " ---\n";
+    const int nparts = size;
 
+    if (rank == 0) {
+        // MASTER NODE
+        const string filename = "initial_dataset.txt";
+
+        set<int> partition_nodes[nparts];
+        vector<vector<DirectedEdge>> partitioned_edges =
+            run_metis_partitioning(filename, nparts, partition_nodes);
+
+        // Send data to each slave
+        for (int p = 1; p < nparts; ++p) {
+            // Send number of edges
+            int edge_count = partitioned_edges[p].size();
+            MPI_Send(&edge_count, 1, MPI_INT, p, 0, MPI_COMM_WORLD);
+            MPI_Send(partitioned_edges[p].data(), edge_count * sizeof(DirectedEdge), MPI_BYTE, p, 1, MPI_COMM_WORLD);
+
+            // Send number of nodes
+            int node_count = partition_nodes[p].size();
+            MPI_Send(&node_count, 1, MPI_INT, p, 2, MPI_COMM_WORLD);
+            vector<int> nodes(partition_nodes[p].begin(), partition_nodes[p].end());
+            MPI_Send(nodes.data(), node_count, MPI_INT, p, 3, MPI_COMM_WORLD);
+        }
+
+        // Master also works on its own partition (p = 0)
         map<int, int> node_to_index;
         map<int, int> index_to_node;
-
-        vector<DirectedEdge> remapped_edges =
-            remap_partition_edges(partitioned_edges[p], partition_nodes[p], node_to_index, index_to_node);
+        vector<DirectedEdge> remapped_edges = remap_partition_edges(partitioned_edges[0], partition_nodes[0], node_to_index, index_to_node);
 
         SCC_CAC_partition(remapped_edges, node_to_index.size());
+        display_partition_results(index_to_node, vertices, remapped_edges, node_to_index, 0);
+        write_activity_file(remapped_edges, index_to_node, "activity.txt");
 
-        display_partition_results(index_to_node, vertices, remapped_edges, node_to_index, p);
-
-        string base = "partition_" + to_string(p) + "_";
+        // Influence Power Calculation
+        string base = "partition_0_";
         load_interest("interest.txt");
         load_graph(base + "edges.txt");
         load_activity("activity.txt");
@@ -859,20 +874,58 @@ int main()
         calculate_influence_power();
         output_IP();
         vector<int> seeds = find_seed_candidates();
-        cout << "\nSeed Candidates:\n";
-        for (int s : seeds)
-        {
-            cout << "Node " << s << " (IP = " << IP[s] << ")\n";
-        }
 
-        vector<int> final_seeds = seed_selection_algorithm(seeds);
-        cout << "Final seeds:\n";
-        for (int seed : final_seeds)
-        {
-            cout << seed << " ";
+        // Receive results from slaves
+        for (int p = 1; p < nparts; ++p) {
+            int seed_count;
+            MPI_Recv(&seed_count, 1, MPI_INT, p, 4, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            vector<int> seeds_from_p(seed_count);
+            MPI_Recv(seeds_from_p.data(), seed_count, MPI_INT, p, 5, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            cout << "\nSeed Candidates from Partition " << p << ":\n";
+            for (int s : seeds_from_p) {
+                cout << "Node " << s << "\n";
+            }
         }
-        cout << endl;
-        clear_maps();
+    } else {
+        // SLAVE NODES
+
+        // Receive edges
+        int edge_count;
+        MPI_Recv(&edge_count, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        vector<DirectedEdge> edges(edge_count);
+        MPI_Recv(edges.data(), edge_count * sizeof(DirectedEdge), MPI_BYTE, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+        // Receive nodes
+        int node_count;
+        MPI_Recv(&node_count, 1, MPI_INT, 0, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        vector<int> nodes(node_count);
+        MPI_Recv(nodes.data(), node_count, MPI_INT, 0, 3, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+        set<int> node_set(nodes.begin(), nodes.end());
+        map<int, int> node_to_index, index_to_node;
+        vector<DirectedEdge> remapped_edges = remap_partition_edges(edges, node_set, node_to_index, index_to_node);
+
+        SCC_CAC_partition(remapped_edges, node_to_index.size());
+        display_partition_results(index_to_node, vertices, remapped_edges, node_to_index, rank);
+        write_activity_file(remapped_edges, index_to_node, "activity.txt");
+
+        string base = "partition_" + to_string(rank) + "_";
+        load_interest("interest.txt");
+        load_graph(base + "edges.txt");
+        load_activity("activity.txt");
+        load_component_map(base + "components.txt");
+        load_component_levels(base + "component_levels.txt");
+        initialize_ip();
+        calculate_influence_power();
+        output_IP();
+        vector<int> seeds = find_seed_candidates();
+
+        int seed_count = seeds.size();
+        MPI_Send(&seed_count, 1, MPI_INT, 0, 4, MPI_COMM_WORLD);
+        MPI_Send(seeds.data(), seed_count, MPI_INT, 0, 5, MPI_COMM_WORLD);
     }
+
+    MPI_Finalize();
     return 0;
 }
