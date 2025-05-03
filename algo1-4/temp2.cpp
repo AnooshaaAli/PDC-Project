@@ -49,6 +49,8 @@ vector<DirectedEdge> remap_partition_edges(
 void display_partition_results(
     const map<int, int>& index_to_node,
     const vector<Vertex>& vertices,
+    const vector<DirectedEdge>& remapped_edges,
+    const map<int, int>& node_to_index,
     int partition_id
 );
 
@@ -257,6 +259,8 @@ vector<DirectedEdge> remap_partition_edges(
 void display_partition_results(
     const map<int, int>& index_to_node,
     const vector<Vertex>& vertices,
+    const vector<DirectedEdge>& remapped_edges,
+    const map<int, int>& node_to_index,
     int partition_id
 ) {
     cout << "\n--- SCC/CAC for Partition " << partition_id << " ---\n";
@@ -264,6 +268,7 @@ void display_partition_results(
     string base = "partition_" + to_string(partition_id) + "_";
     ofstream comp_out(base + "components.txt");
     ofstream level_out(base + "component_levels.txt");
+    ofstream edge_out(base + "edges.txt");
 
     map<int, int> component_written; // comp_id → level
 
@@ -289,8 +294,17 @@ void display_partition_results(
         level_out << comp_id << " " << level << "\n";
     }
 
+    // Write edges (in original node ID form) to edges.txt
+    for (const auto& edge : remapped_edges) {
+        int from_real = index_to_node.at(edge.from);
+        int to_real = index_to_node.at(edge.to);
+
+        edge_out << from_real << " " << to_real << "\n";
+    }
+
     comp_out.close();
     level_out.close();
+    edge_out.close();
 }
 
 
@@ -318,7 +332,7 @@ int main() {
             SCC_CAC_partition(remapped_edges, node_to_index.size());
         
             // Display results using real node IDs
-            display_partition_results(index_to_node, vertices, p);
+            display_partition_results(index_to_node, vertices, remapped_edges, node_to_index, p);
         }
         
 
