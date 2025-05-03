@@ -375,6 +375,21 @@ void write_activity_file(const vector<DirectedEdge>& remapped_edges, const map<i
     f.close();
 }
 
+void write_activity_file(const vector<DirectedEdge>& remapped_edges, const map<int, int>& index_to_node, const string& filename) {
+    ofstream f(filename);
+    for (const auto& edge : remapped_edges) {
+        int from = index_to_node.at(edge.from);
+        int to = index_to_node.at(edge.to);
+        for (int i = 0; i < edge.retweet; ++i)
+            f << from << " " << to << " RT" << endl;
+        for (int i = 0; i < edge.reply; ++i)
+            f << from << " " << to << " RE" << endl;
+        for (int i = 0; i < edge.mention; ++i)
+            f << from << " " << to << " MT" << endl;
+    }
+    f.close();
+}
+
 // Algorithm 5-6 functions
 
 double get_action_weight(const string &act)
@@ -439,7 +454,7 @@ void load_activity(const string &file)
     int u, v;
     long ts;
     string act;
-    while (f >> u >> v >> ts >> act)
+    while (f >> u >> v >> act)
     {
         if (act == "RT")
             action_map[u][v].RT++;
