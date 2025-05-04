@@ -844,6 +844,8 @@ int main(int argc, char** argv) {
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
+    cout << "SIze " << size << endl;
+    cout << "Rank " << rank << endl;
 
     const int nparts = size;
 
