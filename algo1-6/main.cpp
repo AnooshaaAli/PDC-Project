@@ -826,7 +826,7 @@ vector<Seed> select_best_k_seeds(vector<Seed>& final_seeds, int k)
     vector<Seed> best_k_seeds;
     for (int i = 0; i < k && i < seed_scores.size(); ++i)
     {
-        best_k_seeds.emplace_back(seed_scores[i].first, seed_scores[i].second);
+        best_k_seeds.emplace_back(seed_scores[i].is, seed_scores[i].influence);
     }
 
     return best_k_seeds;
