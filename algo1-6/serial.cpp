@@ -14,6 +14,8 @@
 #include <cmath>
 #include <omp.h>
 #include <climits>
+#include <chrono>
+
 
 #define MAX_TOPICS 10
 #define DAMPING 0.85
@@ -332,7 +334,7 @@ void display_partition_results(
     const map<int, int> &node_to_index,
     int partition_id)
 {
-    cout << "\n--- SCC/CAC for Partition " << partition_id << " ---\n";
+    cout << "                   SCC/CAC for Partition " << partition_id << " \n";
 
     string base = "partition_" + to_string(partition_id) + "_";
     ofstream comp_out(base + "components.txt");
@@ -361,6 +363,7 @@ void display_partition_results(
             }
         }
     }
+    cout << "---------------------------------------------------------------------" << endl;
 
     for (const auto &[comp_id, level] : component_written)
     {
@@ -402,8 +405,6 @@ double jaccard(const vector<int> &a, const vector<int> &b)
         if (a[i] && b[i])
             inter++;
     }
-    // cout << inter << endl;
-    // cout << uni << endl;
     return (uni == 0) ? 0.0 : (double)inter / uni;
 }
 
@@ -485,10 +486,8 @@ double compute_psi(int u, int v)
         return 0.0;
 
     double sim = jaccard(interest_map[u], interest_map[v]);
-    // cout << "U: " << u << " V: " << v << " C: " << sim << endl;
 
     ActionCount &a = action_map[u][v];
-    // cout << "Num Retweets: " << a.RT << ", Mentions: " << a.MT << ", Num Replies: " << a.RE << endl;
     double weighted = get_action_weight("RT") * sim * a.RT + get_action_weight("RE") * sim * a.RE + get_action_weight("MT") * sim * a.MT;
     return weighted / total_posts[v];
 }
@@ -535,14 +534,11 @@ void compute_influence_power(const vector<int> &nodes)
                 if (out_degree[f] > 0)
                 {
                     double psi_val = compute_psi(f, u);
-                    // cout << psi_val << endl;
-                    // cout << f << out_degree[f] << endl;
                     sum += psi_val * IP[f] / out_degree[f];
                 }
             }
             double base = (in_degree[u] > 0) ? in_degree[u] : 0.0;
             newIP[u] = DAMPING * sum + ((1.0 - DAMPING) * base) / num_nodes;
-            // cout << newIP[u] << endl;
             delta += fabs(newIP[u] - IP[u]);
         }
 
@@ -568,11 +564,10 @@ void calculate_influence_power()
 
         for (int i = 0; i < comps.size(); ++i)
         {
-            int thread_id = omp_get_thread_num();
-            cout << "[OMP Thread " << thread_id << "] Processing Component " << comps[i] << endl;
             compute_influence_power(component_nodes[comps[i]]);
         }
     }
+    cout << "---------------------------------------------------------------------" << endl;
 }
 
 void output_IP()
@@ -581,6 +576,7 @@ void output_IP()
     {
         cout << "Node " << u << ": IP = " << ip << endl;
     }
+    cout << "---------------------------------------------------------------------" << endl;
 }
 
 unordered_map<int, double> compute_IL(int v)
@@ -627,9 +623,9 @@ unordered_map<int, double> compute_IL(int v)
     return IL;
 }
 
-vector<int> find_seed_candidates()
+vector<pair <int, double>> find_seed_candidates()
 {
-    vector<int> seeds;
+    vector<pair <int, double>> seeds_scores;
 
     for (const auto &[v, _] : IP)
     {
@@ -658,19 +654,13 @@ vector<int> find_seed_candidates()
 
         double IL0 = IL.count(L0) ? IL[L0] : 0.0;
 
-        // cout << "\nNode " << v << ": IP = " << IP[v] << ", IL0 = " << IL0 << ", L0 = " << L0 << endl;
         if (IP[v] > IL0)
         {
-            // cout << "  ✔️ Node " << v << " selected as seed.\n";
-            seeds.push_back(v);
-        }
-        else
-        {
-            // cout << "  ❌ Node " << v << " NOT selected.\n";
+            seeds_scores.emplace_back(v, IP[v]);
         }
     }
 
-    return seeds;
+    return seeds_scores;
 }
 
 void clear_maps()
@@ -751,15 +741,16 @@ unordered_set<int> extract_blackpath(const BFS_Tree &tree, const unordered_set<i
     return blackpath;
 }
 
-vector<int> seed_selection_algorithm(const vector<int> &initial_seeds)
+vector<pair<int, double>> seed_selection_algorithm(const vector<pair<int, double>> &seeds)
 {
-    unordered_set<int> seed_set(initial_seeds.begin(), initial_seeds.end());
-    vector<int> final_seeds;
+    unordered_set<int> seed_set;
+    vector<pair<int, double>> final_seeds_scores;
 
     // Step 1: build all initial influence-BFS trees
     unordered_map<int, BFS_Tree> bfs_trees;
-    for (int seed : initial_seeds)
+    for (const auto &[seed, _] : seeds)
     {
+        seed_set.insert(seed);
         bfs_trees[seed] = influence_bfs_tree(seed, seed_set);
     }
 
@@ -779,6 +770,7 @@ vector<int> seed_selection_algorithm(const vector<int> &initial_seeds)
                 max_seed = seed;
             }
         }
+
         if (max_seed == -1)
             break; // no valid seeds left
 
@@ -795,11 +787,9 @@ vector<int> seed_selection_algorithm(const vector<int> &initial_seeds)
         for (int black_node : blackpath)
         {
             BFS_Tree tree = bfs_trees[black_node];
-
             float rank = compute_rank(tree);
 
-            cout << endl
-                 << "For black_node: " << black_node << ", found rank: " << rank << endl;
+            cout << "\nFor black_node: " << black_node << ", found rank: " << rank << endl;
 
             if (rank < min_rank)
             {
@@ -811,7 +801,7 @@ vector<int> seed_selection_algorithm(const vector<int> &initial_seeds)
 
         if (min_rank_seed != -1)
         {
-            final_seeds.push_back(min_rank_seed);
+            final_seeds_scores.emplace_back(min_rank_seed, IP[min_rank_seed]);
 
             // Remove all blackpath nodes of this best_tree from seed_set
             for (int node : blackpath)
@@ -822,21 +812,58 @@ vector<int> seed_selection_algorithm(const vector<int> &initial_seeds)
         }
     }
 
-    return final_seeds;
+    return final_seeds_scores;
+}
+
+
+
+vector<pair <int, double>> select_best_k_seeds(vector<pair <int, double>> &final_seeds, int k)
+{
+    vector<pair<int, double>> seed_scores;
+    for (const auto &[seed, score] : final_seeds)
+    {
+        seed_scores.emplace_back(seed, score);
+    }
+
+    // Sort seeds by their scores in descending order
+    sort(seed_scores.begin(), seed_scores.end(),
+         [](const pair<int, double> &a, const pair<int, double> &b) {
+             return a.second > b.second;
+         });
+
+    // Select top k seeds
+    vector<pair <int, double>> best_k_seeds;
+    for (int i = 0; i < k && i < seed_scores.size(); ++i)
+    {
+        best_k_seeds.emplace_back(seed_scores[i].first, seed_scores[i].second);
+    }
+
+    return best_k_seeds;
 }
 
 int main()
 {
     const string filename = "initial_dataset.txt";
-    const int nparts = 2;
-
+    int nparts = 2;
+    int k = 1;
+    cout << "---------------------------------------------------------------------" << endl;
+    cout << "Enter the number of influencers you want to find: ", cin >> k;
+    cout << "Enter the number of partition you want to divide the graph into: ", cin >> nparts;
+    while (nparts < 2)
+    {
+        cout << "Number of partitions must be greater than 1. Please enter again: ", cin >> nparts;
+    }
+    cout << "---------------------------------------------------------------------" << endl;
+    cout << endl;
+    cout << endl;
+    auto start_time = chrono::high_resolution_clock::now();
     set<int> partition_nodes[nparts];
-    vector<vector<DirectedEdge>> partitioned_edges =
-        run_metis_partitioning(filename, nparts, partition_nodes);
+    vector<vector<DirectedEdge>> partitioned_edges = run_metis_partitioning(filename, nparts, partition_nodes);
+    
+    vector<pair <int, double>> all_final_seeds;
 
     for (int p = 0; p < nparts; ++p)
     {
-        cout << "\n--- SCC/CAC for Partition " << p << " ---\n";
 
         map<int, int> node_to_index;
         map<int, int> index_to_node;
@@ -844,34 +871,73 @@ int main()
         vector<DirectedEdge> remapped_edges =
             remap_partition_edges(partitioned_edges[p], partition_nodes[p], node_to_index, index_to_node);
 
-        SCC_CAC_partition(remapped_edges, node_to_index.size());
-
-        display_partition_results(index_to_node, vertices, remapped_edges, node_to_index, p);
-
-        string base = "partition_" + to_string(p) + "_";
-        load_interest("interest.txt");
-        load_graph(base + "edges.txt");
-        load_activity("activity.txt");
-        load_component_map(base + "components.txt");
-        load_component_levels(base + "component_levels.txt");
-        initialize_ip();
-        calculate_influence_power();
-        output_IP();
-        vector<int> seeds = find_seed_candidates();
-        cout << "\nSeed Candidates:\n";
-        for (int s : seeds)
+        if (remapped_edges.empty())
         {
-            cout << "Node " << s << " (IP = " << IP[s] << ")\n";
+            cout << "-------------------------- Partition " << p << " ------------------------------" << endl;
+            cout << "No edges in this partition " << endl;
+            cout << "---------------------------------------------------------------------" << endl;
+            cout << endl;
+            continue;
+        }
+        else
+        {
+            cout << "-------------------------- Partition " << p << " ------------------------------" << endl;
+            SCC_CAC_partition(remapped_edges, node_to_index.size());
+
+            display_partition_results(index_to_node, vertices, remapped_edges, node_to_index, p);
+
+            string base = "partition_" + to_string(p) + "_";
+            load_interest("interest.txt");
+            load_graph(base + "edges.txt");
+            load_activity("activity.txt");
+            load_component_map(base + "components.txt");
+            load_component_levels(base + "component_levels.txt");
+            initialize_ip();
+            calculate_influence_power();
+            output_IP();
+            vector<pair <int, double>> seeds = find_seed_candidates();
+            cout << "\nSeed Candidates:\n";
+            for (const auto &[s, score] : seeds)
+            {
+                cout << "Node " << s << " (IP = " << IP[s] << ")\n";
+            }
+            cout << "---------------------------------------------------------------------" << endl;
+            vector<pair <int, double>> final_seeds = seed_selection_algorithm(seeds);
+            all_final_seeds.insert(all_final_seeds.end(), final_seeds.begin(), final_seeds.end());
+            cout << "Final seeds:\n";
+            for (const auto &[seed, score] : final_seeds)
+            {
+                cout << seed << " ";
+            }
+            cout << endl;
+            cout << "---------------------------------------------------------------------" << endl;
+            cout << endl;
+            cout << endl;
+            cout << endl;
+            clear_maps();
         }
 
-        vector<int> final_seeds = seed_selection_algorithm(seeds);
-        cout << "Final seeds:\n";
-        for (int seed : final_seeds)
-        {
-            cout << seed << " ";
-        }
-        cout << endl;
-        clear_maps();
     }
+    cout << "---------------- Final Influencers User Selected --------------------" << endl;
+    if (all_final_seeds.empty())
+    {
+        cout << "No influencers found." << endl;
+    }
+    else
+    {
+        vector<pair <int, double>> best_k_seeds = select_best_k_seeds(all_final_seeds, k);
+        for (const auto &[seed, score] : best_k_seeds)
+        {
+            cout << "User " << seed << " with IP " << score << endl;
+        }
+    }
+    cout << "---------------------------------------------------------------------" << endl;
+
+    auto end_time = chrono::high_resolution_clock::now();
+    chrono::duration<double> elapsed = end_time - start_time;
+    cout << "Execution time: " << elapsed.count() << " seconds" << std::endl;
+    cout << "---------------------------------------------------------------------" << endl;
+    cout << "---------------------------- End of Program -------------------------" << endl;
+
     return 0;
 }

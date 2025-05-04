@@ -559,8 +559,11 @@ void calculate_influence_power()
         cout << "Processing Level " << level << "...\n";
         const auto &comps = level_components[level];
 
+        #pragma omp parallel for
         for (int i = 0; i < comps.size(); ++i)
         {
+            int thread_id = omp_get_thread_num();
+            cout << "[OMP Thread " << thread_id << "] Processing Component " << comps[i] << endl;
             compute_influence_power(component_nodes[comps[i]]);
         }
     }
@@ -882,6 +885,7 @@ int main(int argc, char** argv) {
 
     const int nparts = size;
     int k;
+
     if (size < 2) {
         cerr << "This program requires at least 2 processes." << endl;
         MPI_Finalize();
