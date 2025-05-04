@@ -626,17 +626,17 @@ unordered_map<int, double> compute_IL(int v)
     return IL;
 }
 
-vector<pair <int, double>> find_seed_candidates()
+vector<Seed> find_seed_candidates()
 {
-    vector<pair <int, double>> seeds_scores;
+    vector<Seed> seeds_scores;
 
-    for (const auto &[v, _] : IP)
+    for (const auto& [v, _] : IP)
     {
         unordered_map<int, double> IL = compute_IL(v);
 
         vector<int> gamma;
         int max_lvl = 0;
-        for (const auto &[lvl, _] : IL)
+        for (const auto& [lvl, _] : IL)
         {
             if (lvl > max_lvl)
                 max_lvl = lvl;
@@ -654,7 +654,6 @@ vector<pair <int, double>> find_seed_candidates()
         }
 
         int L0 = gamma.empty() ? max_lvl : *min_element(gamma.begin(), gamma.end());
-
         double IL0 = IL.count(L0) ? IL[L0] : 0.0;
 
         if (IP[v] > IL0)
@@ -665,6 +664,7 @@ vector<pair <int, double>> find_seed_candidates()
 
     return seeds_scores;
 }
+
 
 void clear_maps()
 {
@@ -745,29 +745,26 @@ unordered_set<int> extract_blackpath(const BFS_Tree &tree, const unordered_set<i
     return blackpath;
 }
 
-vector<pair<int, double>> seed_selection_algorithm(const vector<pair<int, double>> &seeds)
+vector<Seed> seed_selection_algorithm(const vector<Seed>& seeds)
 {
     unordered_set<int> seed_set;
-    vector<pair<int, double>> final_seeds_scores;
+    vector<Seed> final_seeds_scores;
 
-    // Step 1: build all initial influence-BFS trees
     unordered_map<int, BFS_Tree> bfs_trees;
-    for (const auto &[seed, _] : seeds)
+    for (const auto& [seed, _] : seeds)
     {
         seed_set.insert(seed);
         bfs_trees[seed] = influence_bfs_tree(seed, seed_set);
     }
 
-    // Step 2: repeat until no seeds remain
     while (!seed_set.empty())
     {
-        // Step 3: find seed that has largest influence tree
         int max_seed = -1;
         size_t max_size = 0;
 
-        for (const auto &[seed, tree] : bfs_trees)
+        for (const auto& [seed, tree] : bfs_trees)
         {
-            size_t size = tree.parent.size(); // total nodes in the tree
+            size_t size = tree.parent.size();
             if (size > max_size && seed_set.count(seed))
             {
                 max_size = size;
@@ -776,14 +773,11 @@ vector<pair<int, double>> seed_selection_algorithm(const vector<pair<int, double
         }
 
         if (max_seed == -1)
-            break; // no valid seeds left
+            break;
 
-        const BFS_Tree &largest_tree = bfs_trees[max_seed];
-
-        // Step 4: get blackpath of this tree
+        const BFS_Tree& largest_tree = bfs_trees[max_seed];
         unordered_set<int> blackpath = extract_blackpath(largest_tree, seed_set);
 
-        // Step 5: find tree rooted at each blackpath node and compute rank
         int min_rank_seed = -1;
         float min_rank = std::numeric_limits<float>::max();
         BFS_Tree best_tree;
@@ -792,8 +786,6 @@ vector<pair<int, double>> seed_selection_algorithm(const vector<pair<int, double
         {
             BFS_Tree tree = bfs_trees[black_node];
             float rank = compute_rank(tree);
-
-            //cout << "\nFor black_node: " << black_node << ", found rank: " << rank << endl;
 
             if (rank < min_rank)
             {
@@ -807,11 +799,10 @@ vector<pair<int, double>> seed_selection_algorithm(const vector<pair<int, double
         {
             final_seeds_scores.emplace_back(min_rank_seed, IP[min_rank_seed]);
 
-            // Remove all blackpath nodes of this best_tree from seed_set
             for (int node : blackpath)
             {
                 seed_set.erase(node);
-                bfs_trees.erase(node); // also remove its BFS tree if exists
+                bfs_trees.erase(node);
             }
         }
     }
@@ -819,22 +810,20 @@ vector<pair<int, double>> seed_selection_algorithm(const vector<pair<int, double
     return final_seeds_scores;
 }
 
-vector<pair <int, double>> select_best_k_seeds(vector<pair <int, double>> &final_seeds, int k)
+vector<Seed> select_best_k_seeds(vector<Seed>& final_seeds, int k)
 {
-    vector<pair<int, double>> seed_scores;
-    for (const auto &[seed, score] : final_seeds)
+    vector<Seed> seed_scores;
+    for (const auto& [seed, score] : final_seeds)
     {
         seed_scores.emplace_back(seed, score);
     }
 
-    // Sort seeds by their scores in descending order
     sort(seed_scores.begin(), seed_scores.end(),
-         [](const pair<int, double> &a, const pair<int, double> &b) {
+         [](const Seed& a, const Seed& b) {
              return a.second > b.second;
          });
 
-    // Select top k seeds
-    vector<pair <int, double>> best_k_seeds;
+    vector<Seed> best_k_seeds;
     for (int i = 0; i < k && i < seed_scores.size(); ++i)
     {
         best_k_seeds.emplace_back(seed_scores[i].first, seed_scores[i].second);
@@ -843,7 +832,7 @@ vector<pair <int, double>> select_best_k_seeds(vector<pair <int, double>> &final
     return best_k_seeds;
 }
 
-vector<pair<int, double>> process_partition(int p, const vector<DirectedEdge>& remapped_edges, map<int, int>& node_to_index, map<int, int>& index_to_node)
+vector<Seed> process_partition(int p, const vector<DirectedEdge>& remapped_edges, map<int, int>& node_to_index, map<int, int>& index_to_node)
 {
     cout << "-------------------------- Partition " << p << " ------------------------------" << endl;
     SCC_CAC_partition(remapped_edges, node_to_index.size());
@@ -857,20 +846,9 @@ vector<pair<int, double>> process_partition(int p, const vector<DirectedEdge>& r
     load_component_levels(base + "component_levels.txt");
     initialize_ip();
     calculate_influence_power();
-    //output_IP();
 
-    vector<pair<int, double>> seeds = find_seed_candidates();
-    //cout << "\nSeed Candidates:\n";
-    //for (const auto &[s, score] : seeds) {
-    //cout << "Node " << s << " (IP = " << score << ")\n";
-    //}
-
-    vector<pair<int, double>> final_seeds = seed_selection_algorithm(seeds);
-    //cout << "Final seeds:\n";
-    //for (const auto &[seed, _] : final_seeds) {
-    //cout << seed << " ";
-    //}
-    //cout << "\n---------------------------------------------------------------------\n\n";
+    vector<Seed> seeds = find_seed_candidates();
+    vector<Seed> final_seeds = seed_selection_algorithm(seeds);
 
     clear_maps();
     return final_seeds;
