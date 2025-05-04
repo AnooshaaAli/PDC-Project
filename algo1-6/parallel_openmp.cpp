@@ -15,6 +15,7 @@
 #include <omp.h>
 #include <climits>
 #include <mpi.h>
+#include <chrono>
 
 #define MAX_TOPICS 10
 #define DAMPING 0.85
@@ -559,8 +560,11 @@ void calculate_influence_power()
         cout << "Processing Level " << level << "...\n";
         const auto &comps = level_components[level];
 
+        #pragma omp parallel for
         for (int i = 0; i < comps.size(); ++i)
         {
+            int thread_id = omp_get_thread_num();
+            cout << "[OMP Thread " << thread_id << "] Processing Component " << comps[i] << endl;
             compute_influence_power(component_nodes[comps[i]]);
         }
     }
@@ -882,7 +886,7 @@ int main(int argc, char** argv) {
 
     const int nparts = size;
     int k = 3;
-    
+
     if (size < 2) {
         cerr << "This program requires at least 2 processes." << endl;
         MPI_Finalize();
@@ -893,8 +897,8 @@ int main(int argc, char** argv) {
     vector<pair<int, double>> all_final_seeds;
     auto start_time;
 
-    if (rank == 0) {    
-        start_time = chrono::high_resolution_clock::now();
+    if (rank == 0) {
+        auto start_time = chrono::high_resolution_clock::now();
         // Master node: partition and distribute
         set<int> partition_nodes[nparts];
         vector<vector<DirectedEdge>> partitioned_edges =
@@ -974,6 +978,7 @@ int main(int argc, char** argv) {
         MPI_Send(&seed_count, 1, MPI_INT, 0, 4, MPI_COMM_WORLD);
         MPI_Send(final_seeds.data(), seed_count * sizeof(pair<int, double>), MPI_BYTE, 0, 5, MPI_COMM_WORLD);
     }
+    
     if (rank == 0)
     {
         auto end_time = chrono::high_resolution_clock::now();
