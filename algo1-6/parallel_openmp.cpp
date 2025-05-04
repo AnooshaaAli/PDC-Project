@@ -885,19 +885,12 @@ int main(int argc, char** argv) {
     cout << "Rank: " << rank << ", Total Processes: " << size << endl;
 
     const int nparts = size;
-    int k;
+    int k = 3;
 
     if (size < 2) {
         cerr << "This program requires at least 2 processes." << endl;
         MPI_Finalize();
         return 1;
-    }
-
-    if (rank == 0) {
-        cout << "---------------------------------------------------------------------" << endl;
-        cout << "Enter the number of influencers you want to find: ";
-        cin >> k;
-        cout << "---------------------------------------------------------------------" << endl;
     }
 
     const string filename = "initial_dataset.txt";
