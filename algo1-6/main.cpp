@@ -31,6 +31,11 @@ struct DirectedEdge
     int partition;
 };
 
+struct Seed {
+    int id;
+    double influence;
+};
+
 struct Vertex
 {
     int index = -1, lowlink = -1, level = -1, depth = -1;
@@ -893,24 +898,28 @@ int main(int argc, char** argv) {
     const string filename = "gnutella_dataset.txt";
     vector<Seed> all_final_seeds;
 
-    // ----------------- MPI Datatype for DirectedEdge ----------------
+    // ----------------- MPI Datatype for DirectedEdge (5 ints) ----------------
     MPI_Datatype MPI_DirectedEdge;
     DirectedEdge tmp_edge;
-    int edge_block_lengths[3] = {1, 1, 1};
-    MPI_Datatype edge_types[3] = {MPI_INT, MPI_INT, MPI_DOUBLE};
-    MPI_Aint edge_displacements[3];
-    MPI_Aint base_addr_edge;
+    int block_lengths[6] = {1, 1, 1, 1, 1, 1};
+    MPI_Datatype types[6] = {MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT};
+    MPI_Aint displacements[6];
+    MPI_Aint base_addr;
 
-    MPI_Get_address(&tmp_edge, &base_addr_edge);
-    MPI_Get_address(&tmp_edge.from, &edge_displacements[0]);
-    MPI_Get_address(&tmp_edge.to, &edge_displacements[1]);
-    MPI_Get_address(&tmp_edge.weight, &edge_displacements[2]);
+    MPI_Get_address(&tmp_edge, &base_addr);
+    MPI_Get_address(&tmp_edge.from, &displacements[0]);
+    MPI_Get_address(&tmp_edge.to, &displacements[1]);
+    MPI_Get_address(&tmp_edge.retweet, &displacements[2]);
+    MPI_Get_address(&tmp_edge.reply, &displacements[3]);
+    MPI_Get_address(&tmp_edge.mention, &displacements[4]);
+    MPI_Get_address(&tmp_edge.partition, &displacements[5]);
 
-    for (int i = 0; i < 3; ++i)
-        edge_displacements[i] -= base_addr_edge;
+    for (int i = 0; i < 6; ++i)
+        displacements[i] -= base_addr;
 
-    MPI_Type_create_struct(3, edge_block_lengths, edge_displacements, edge_types, &MPI_DirectedEdge);
+    MPI_Type_create_struct(6, block_lengths, displacements, types, &MPI_DirectedEdge);
     MPI_Type_commit(&MPI_DirectedEdge);
+
 
     // ----------------- MPI Datatype for Seed (pair<int, double>) ----------------
     MPI_Datatype MPI_Seed;
