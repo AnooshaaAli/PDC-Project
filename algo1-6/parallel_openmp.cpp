@@ -15,6 +15,7 @@
 #include <omp.h>
 #include <climits>
 #include <mpi.h>
+#include <chrono>
 
 #define MAX_TOPICS 10
 #define DAMPING 0.85
@@ -983,12 +984,15 @@ int main(int argc, char** argv) {
         MPI_Send(&seed_count, 1, MPI_INT, 0, 4, MPI_COMM_WORLD);
         MPI_Send(final_seeds.data(), seed_count * sizeof(pair<int, double>), MPI_BYTE, 0, 5, MPI_COMM_WORLD);
     }
-
-    auto end_time = chrono::high_resolution_clock::now();
-    chrono::duration<double> elapsed = end_time - start_time;
-    cout << "Execution time: " << elapsed.count() << " seconds" << std::endl;
-    cout << "---------------------------------------------------------------------" << endl;
-    cout << "---------------------------- End of Program -------------------------" << endl;
+    
+    if (rank == 0)
+    {
+        auto end_time = chrono::high_resolution_clock::now();
+        chrono::duration<double> elapsed = end_time - start_time;
+        cout << "Execution time: " << elapsed.count() << " seconds" << std::endl;
+        cout << "---------------------------------------------------------------------" << endl;
+        cout << "---------------------------- End of Program -------------------------" << endl;
+    }
 
     MPI_Finalize();
     return 0;
