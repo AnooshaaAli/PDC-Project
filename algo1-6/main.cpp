@@ -897,9 +897,10 @@ int main(int argc, char** argv) {
 
     const string filename = "initial_dataset.txt";
     vector<pair<int, double>> all_final_seeds;
-    auto start_time = chrono::high_resolution_clock::now();
+    auto start_time;
 
-    if (rank == 0) {
+    if (rank == 0) {    
+        start_time = chrono::high_resolution_clock::now();
         // Master node: partition and distribute
         set<int> partition_nodes[nparts];
         vector<vector<DirectedEdge>> partitioned_edges =
