@@ -15,7 +15,7 @@
 #include <omp.h>
 #include <climits>
 #include <mpi.h>
-
+#include <chrono>
 #define MAX_TOPICS 10
 #define DAMPING 0.85
 #define EPSILON 0.0001
@@ -326,11 +326,11 @@ void display_partition_results(const map<int, int> &index_to_node, const vector<
 
         if (vertices[i].comp != -1)
         {
-            cout << "Vertex " << real_node
+            /*cout << "Vertex " << real_node
                  << " | Comp: " << vertices[i].comp
                  << " | Type: " << vertices[i].type
                  << " | Level: " << vertices[i].level
-                 << " | Lowlink: " << vertices[i].lowlink << endl;
+                 << " | Lowlink: " << vertices[i].lowlink << endl;*/
 
             comp_out << real_node << " " << vertices[i].comp << "\n";
 
@@ -340,7 +340,7 @@ void display_partition_results(const map<int, int> &index_to_node, const vector<
             }
         }
     }
-    cout << "---------------------------------------------------------------------" << endl;
+    //cout << "---------------------------------------------------------------------" << endl;
 
     for (const auto &[comp_id, level] : component_written)
     {
@@ -556,7 +556,7 @@ void calculate_influence_power()
 
     for (int level : levels)
     {
-        cout << "Processing Level " << level << "...\n";
+        //cout << "Processing Level " << level << "...\n";
         const auto &comps = level_components[level];
 
         for (int i = 0; i < comps.size(); ++i)
@@ -564,16 +564,16 @@ void calculate_influence_power()
             compute_influence_power(component_nodes[comps[i]]);
         }
     }
-    cout << "---------------------------------------------------------------------" << endl;
+    //cout << "---------------------------------------------------------------------" << endl;
 }
 
 void output_IP()
 {
-    for (const auto &[u, ip] : IP)
+    /*for (const auto &[u, ip] : IP)
     {
         cout << "Node " << u << ": IP = " << ip << endl;
     }
-    cout << "---------------------------------------------------------------------" << endl;
+    cout << "---------------------------------------------------------------------" << endl;*/
 }
 
 unordered_map<int, double> compute_IL(int v)
@@ -787,7 +787,7 @@ vector<pair<int, double>> seed_selection_algorithm(const vector<pair<int, double
             BFS_Tree tree = bfs_trees[black_node];
             float rank = compute_rank(tree);
 
-            cout << "\nFor black_node: " << black_node << ", found rank: " << rank << endl;
+            //cout << "\nFor black_node: " << black_node << ", found rank: " << rank << endl;
 
             if (rank < min_rank)
             {
@@ -851,20 +851,20 @@ vector<pair<int, double>> process_partition(int p, const vector<DirectedEdge>& r
     load_component_levels(base + "component_levels.txt");
     initialize_ip();
     calculate_influence_power();
-    output_IP();
+    //output_IP();
 
     vector<pair<int, double>> seeds = find_seed_candidates();
-    cout << "\nSeed Candidates:\n";
-    for (const auto &[s, score] : seeds) {
-    cout << "Node " << s << " (IP = " << score << ")\n";
-    }
+    //cout << "\nSeed Candidates:\n";
+    //for (const auto &[s, score] : seeds) {
+    //cout << "Node " << s << " (IP = " << score << ")\n";
+    //}
 
     vector<pair<int, double>> final_seeds = seed_selection_algorithm(seeds);
-    cout << "Final seeds:\n";
-    for (const auto &[seed, _] : final_seeds) {
-    cout << seed << " ";
-    }
-    cout << "\n---------------------------------------------------------------------\n\n";
+    //cout << "Final seeds:\n";
+    //for (const auto &[seed, _] : final_seeds) {
+    //cout << seed << " ";
+    //}
+    //cout << "\n---------------------------------------------------------------------\n\n";
 
     clear_maps();
     return final_seeds;
@@ -889,12 +889,12 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    const string filename = "initial_dataset.txt";
+    const string filename = "gnutella_dataset.txt";
     vector<pair<int, double>> all_final_seeds;
-    auto start_time;
+    //auto start_time = 0;
 
     if (rank == 0) {    
-        start_time = chrono::high_resolution_clock::now();
+      //  start_time = chrono::high_resolution_clock::now();
         // Master node: partition and distribute
         set<int> partition_nodes[nparts];
         vector<vector<DirectedEdge>> partitioned_edges =
@@ -974,14 +974,14 @@ int main(int argc, char** argv) {
         MPI_Send(&seed_count, 1, MPI_INT, 0, 4, MPI_COMM_WORLD);
         MPI_Send(final_seeds.data(), seed_count * sizeof(pair<int, double>), MPI_BYTE, 0, 5, MPI_COMM_WORLD);
     }
-    if (rank == 0)
-    {
-        auto end_time = chrono::high_resolution_clock::now();
-        chrono::duration<double> elapsed = end_time - start_time;
-        cout << "Execution time: " << elapsed.count() << " seconds" << std::endl;
-        cout << "---------------------------------------------------------------------" << endl;
-        cout << "---------------------------- End of Program -------------------------" << endl;
-    }
+  //  if (rank == 0)
+  //  {
+  //      auto end_time = chrono::high_resolution_clock::now();
+ //       chrono::duration<double> elapsed = end_time - start_time;
+  //      cout << "Execution time: " << elapsed.count() << " seconds" << std::endl;
+    //    cout << "---------------------------------------------------------------------" << endl;
+  //      cout << "---------------------------- End of Program -------------------------" << endl;
+//    }
 
     MPI_Finalize();
     return 0;
