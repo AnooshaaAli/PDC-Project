@@ -16,6 +16,7 @@
 #include <climits>
 #include <mpi.h>
 #include <chrono>
+
 #define MAX_TOPICS 10
 #define DAMPING 0.85
 #define EPSILON 0.0001
@@ -882,7 +883,7 @@ int main(int argc, char** argv) {
 
     const int nparts = size;
     int k = 3;
-    
+
     if (size < 2) {
         cerr << "This program requires at least 2 processes." << endl;
         MPI_Finalize();
@@ -890,21 +891,55 @@ int main(int argc, char** argv) {
     }
 
     const string filename = "gnutella_dataset.txt";
-    vector<pair<int, double>> all_final_seeds;
-    //auto start_time = 0;
+    vector<Seed> all_final_seeds;
 
-    if (rank == 0) {    
-      //  start_time = chrono::high_resolution_clock::now();
-        // Master node: partition and distribute
+    // ----------------- MPI Datatype for DirectedEdge ----------------
+    MPI_Datatype MPI_DirectedEdge;
+    DirectedEdge tmp_edge;
+    int edge_block_lengths[3] = {1, 1, 1};
+    MPI_Datatype edge_types[3] = {MPI_INT, MPI_INT, MPI_DOUBLE};
+    MPI_Aint edge_displacements[3];
+    MPI_Aint base_addr_edge;
+
+    MPI_Get_address(&tmp_edge, &base_addr_edge);
+    MPI_Get_address(&tmp_edge.from, &edge_displacements[0]);
+    MPI_Get_address(&tmp_edge.to, &edge_displacements[1]);
+    MPI_Get_address(&tmp_edge.weight, &edge_displacements[2]);
+
+    for (int i = 0; i < 3; ++i)
+        edge_displacements[i] -= base_addr_edge;
+
+    MPI_Type_create_struct(3, edge_block_lengths, edge_displacements, edge_types, &MPI_DirectedEdge);
+    MPI_Type_commit(&MPI_DirectedEdge);
+
+    // ----------------- MPI Datatype for Seed (pair<int, double>) ----------------
+    MPI_Datatype MPI_Seed;
+    Seed tmp_seed;
+    int seed_block_lengths[2] = {1, 1};
+    MPI_Datatype seed_types[2] = {MPI_INT, MPI_DOUBLE};
+    MPI_Aint seed_displacements[2];
+    MPI_Aint base_addr_seed;
+
+    MPI_Get_address(&tmp_seed, &base_addr_seed);
+    MPI_Get_address(&tmp_seed.id, &seed_displacements[0]);
+    MPI_Get_address(&tmp_seed.influence, &seed_displacements[1]);
+
+    for (int i = 0; i < 2; ++i)
+        seed_displacements[i] -= base_addr_seed;
+
+    MPI_Type_create_struct(2, seed_block_lengths, seed_displacements, seed_types, &MPI_Seed);
+    MPI_Type_commit(&MPI_Seed);
+
+    // ---------------------------- MASTER ----------------------------
+    if (rank == 0) {
         set<int> partition_nodes[nparts];
         vector<vector<DirectedEdge>> partitioned_edges =
             run_metis_partitioning(filename, nparts, partition_nodes);
 
-        // Send data to slaves
         for (int p = 1; p < nparts; ++p) {
             int edge_count = partitioned_edges[p].size();
             MPI_Send(&edge_count, 1, MPI_INT, p, 0, MPI_COMM_WORLD);
-            MPI_Send(partitioned_edges[p].data(), edge_count * sizeof(DirectedEdge), MPI_BYTE, p, 1, MPI_COMM_WORLD);
+            MPI_Send(partitioned_edges[p].data(), edge_count, MPI_DirectedEdge, p, 1, MPI_COMM_WORLD);
 
             int node_count = partition_nodes[p].size();
             vector<int> nodes(partition_nodes[p].begin(), partition_nodes[p].end());
@@ -912,48 +947,47 @@ int main(int argc, char** argv) {
             MPI_Send(nodes.data(), node_count, MPI_INT, p, 3, MPI_COMM_WORLD);
         }
 
-        // Master processes its own partition
+        // Process Partition 0
         set<int> node_set = partition_nodes[0];
         map<int, int> node_to_index, index_to_node;
         vector<DirectedEdge> remapped_edges =
             remap_partition_edges(partitioned_edges[0], node_set, node_to_index, index_to_node);
 
         if (!remapped_edges.empty()) {
-            vector<pair<int, double>> final_seeds =
+            vector<Seed> final_seeds =
                 process_partition(0, remapped_edges, node_to_index, index_to_node);
             all_final_seeds.insert(all_final_seeds.end(), final_seeds.begin(), final_seeds.end());
-        }
-        else {
+        } else {
             cout << "Partition 0 has no edges.\n";
         }
 
-        // Receive final seeds from each slave
+        // Receive results from slaves
         for (int p = 1; p < nparts; ++p) {
             int seed_count;
             MPI_Recv(&seed_count, 1, MPI_INT, p, 4, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            vector<pair<int, double>> seeds(seed_count);
-            MPI_Recv(seeds.data(), seed_count * sizeof(pair<int, double>), MPI_BYTE, p, 5, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
+            vector<Seed> seeds(seed_count);
+            MPI_Recv(seeds.data(), seed_count, MPI_Seed, p, 5, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             all_final_seeds.insert(all_final_seeds.end(), seeds.begin(), seeds.end());
         }
 
-        // Final output
+        // Output results
         cout << "---------------- Final Influencers User Selected --------------------" << endl;
         if (all_final_seeds.empty()) {
             cout << "No influencers found." << endl;
         } else {
-            vector<pair<int, double>> best_k_seeds = select_best_k_seeds(all_final_seeds, k);
-            for (const auto &[seed, score] : best_k_seeds) {
-                cout << "User " << seed << " with IP " << score << endl;
+            vector<Seed> best_k_seeds = select_best_k_seeds(all_final_seeds, k);
+            for (const auto &[id, score] : best_k_seeds) {
+                cout << "User " << id << " with IP " << score << endl;
             }
         }
         cout << "---------------------------------------------------------------------" << endl;
-    } else {
-        // SLAVE node
+    }
+    // ---------------------------- SLAVES ----------------------------
+    else {
         int edge_count;
         MPI_Recv(&edge_count, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         vector<DirectedEdge> edges(edge_count);
-        MPI_Recv(edges.data(), edge_count * sizeof(DirectedEdge), MPI_BYTE, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(edges.data(), edge_count, MPI_DirectedEdge, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
         int node_count;
         MPI_Recv(&node_count, 1, MPI_INT, 0, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
@@ -965,24 +999,19 @@ int main(int argc, char** argv) {
         vector<DirectedEdge> remapped_edges =
             remap_partition_edges(edges, node_set, node_to_index, index_to_node);
 
-        vector<pair<int, double>> final_seeds;
+        vector<Seed> final_seeds;
         if (!remapped_edges.empty()) {
             final_seeds = process_partition(rank, remapped_edges, node_to_index, index_to_node);
         }
 
         int seed_count = final_seeds.size();
         MPI_Send(&seed_count, 1, MPI_INT, 0, 4, MPI_COMM_WORLD);
-        MPI_Send(final_seeds.data(), seed_count * sizeof(pair<int, double>), MPI_BYTE, 0, 5, MPI_COMM_WORLD);
+        MPI_Send(final_seeds.data(), seed_count, MPI_Seed, 0, 5, MPI_COMM_WORLD);
     }
-  //  if (rank == 0)
-  //  {
-  //      auto end_time = chrono::high_resolution_clock::now();
- //       chrono::duration<double> elapsed = end_time - start_time;
-  //      cout << "Execution time: " << elapsed.count() << " seconds" << std::endl;
-    //    cout << "---------------------------------------------------------------------" << endl;
-  //      cout << "---------------------------- End of Program -------------------------" << endl;
-//    }
 
+    // ---------------------------- Cleanup ----------------------------
+    MPI_Type_free(&MPI_DirectedEdge);
+    MPI_Type_free(&MPI_Seed);
     MPI_Finalize();
     return 0;
 }
