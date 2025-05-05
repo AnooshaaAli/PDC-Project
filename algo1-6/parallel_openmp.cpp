@@ -976,7 +976,6 @@ int main(int argc, char** argv) {
     // ---------------------------- SLAVES ----------------------------
     else {
         int edge_count;
-        cout<<"For rank "<<rank<<" entered else to recv"<<endl;
         MPI_Recv(&edge_count, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         vector<DirectedEdge> edges(edge_count);
         MPI_Recv(edges.data(), edge_count, MPI_DirectedEdge, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
