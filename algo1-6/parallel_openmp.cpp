@@ -567,7 +567,7 @@ void calculate_influence_power()
     {
         cout << "Processing Level " << level << "...\n";
         const auto &comps = level_components[level];
-
+	omp_set_num_threads(16);
         #pragma omp parallel for
         for (int i = 0; i < comps.size(); ++i)
         {
