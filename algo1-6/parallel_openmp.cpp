@@ -565,27 +565,24 @@ void calculate_influence_power()
 
     for (int level : levels)
     {
-        cout << "Processing Level " << level << "...\n";
         const auto &comps = level_components[level];
 
         #pragma omp parallel for
         for (int i = 0; i < comps.size(); ++i)
         {
             int thread_id = omp_get_thread_num();
-            cout << "[OMP Thread " << thread_id << "] Processing Component " << comps[i] << endl;
             compute_influence_power(component_nodes[comps[i]]);
         }
     }
-    cout << "---------------------------------------------------------------------" << endl;
 }
 
 void output_IP()
 {
-    /*for (const auto &[u, ip] : IP)
+    for (const auto &[u, ip] : IP)
     {
         cout << "Node " << u << ": IP = " << ip << endl;
     }
-    cout << "---------------------------------------------------------------------" << endl;*/
+    cout << "---------------------------------------------------------------------" << endl;
 }
 
 unordered_map<int, double> compute_IL(int v)
