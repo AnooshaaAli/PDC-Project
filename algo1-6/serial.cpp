@@ -334,7 +334,6 @@ void display_partition_results(
     const map<int, int> &node_to_index,
     int partition_id)
 {
-    cout << "                   SCC/CAC for Partition " << partition_id << " \n";
 
     string base = "partition_" + to_string(partition_id) + "_";
     ofstream comp_out(base + "components.txt");
@@ -349,12 +348,6 @@ void display_partition_results(
 
         if (vertices[i].comp != -1)
         {
-            cout << "Vertex " << real_node
-                 << " | Comp: " << vertices[i].comp
-                 << " | Type: " << vertices[i].type
-                 << " | Level: " << vertices[i].level
-                 << " | Lowlink: " << vertices[i].lowlink << endl;
-
             comp_out << real_node << " " << vertices[i].comp << "\n";
 
             if (component_written.find(vertices[i].comp) == component_written.end())
@@ -363,7 +356,6 @@ void display_partition_results(
             }
         }
     }
-    cout << "---------------------------------------------------------------------" << endl;
 
     for (const auto &[comp_id, level] : component_written)
     {
@@ -559,7 +551,6 @@ void calculate_influence_power()
 
     for (int level : levels)
     {
-        cout << "Processing Level " << level << "...\n";
         const auto &comps = level_components[level];
 
         for (int i = 0; i < comps.size(); ++i)
@@ -567,7 +558,6 @@ void calculate_influence_power()
             compute_influence_power(component_nodes[comps[i]]);
         }
     }
-    cout << "---------------------------------------------------------------------" << endl;
 }
 
 void output_IP()
@@ -789,7 +779,6 @@ vector<pair<int, double>> seed_selection_algorithm(const vector<pair<int, double
             BFS_Tree tree = bfs_trees[black_node];
             float rank = compute_rank(tree);
 
-            cout << "\nFor black_node: " << black_node << ", found rank: " << rank << endl;
 
             if (rank < min_rank)
             {
@@ -843,7 +832,7 @@ vector<pair <int, double>> select_best_k_seeds(vector<pair <int, double>> &final
 
 int main()
 {
-    const string filename = "initial_dataset.txt";
+    const string filename = "gnutella_dataset.txt";
     int nparts = 2;
     int k = 1;
     cout << "---------------------------------------------------------------------" << endl;
@@ -894,26 +883,10 @@ int main()
             load_component_levels(base + "component_levels.txt");
             initialize_ip();
             calculate_influence_power();
-            output_IP();
+            //output_IP();
             vector<pair <int, double>> seeds = find_seed_candidates();
-            cout << "\nSeed Candidates:\n";
-            for (const auto &[s, score] : seeds)
-            {
-                cout << "Node " << s << " (IP = " << IP[s] << ")\n";
-            }
-            cout << "---------------------------------------------------------------------" << endl;
             vector<pair <int, double>> final_seeds = seed_selection_algorithm(seeds);
             all_final_seeds.insert(all_final_seeds.end(), final_seeds.begin(), final_seeds.end());
-            cout << "Final seeds:\n";
-            for (const auto &[seed, score] : final_seeds)
-            {
-                cout << seed << " ";
-            }
-            cout << endl;
-            cout << "---------------------------------------------------------------------" << endl;
-            cout << endl;
-            cout << endl;
-            cout << endl;
             clear_maps();
         }
 
