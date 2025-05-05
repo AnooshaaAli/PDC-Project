@@ -320,7 +320,7 @@ vector<DirectedEdge> remap_partition_edges(const vector<DirectedEdge> &edges, co
 
 void display_partition_results(const map<int, int> &index_to_node, const vector<Vertex> &vertices, const vector<DirectedEdge> &remapped_edges, const map<int, int> &node_to_index, int partition_id)
 {
-    cout << "                   SCC/CAC for Partition " << partition_id << " \n";
+    //cout << "                   SCC/CAC for Partition " << partition_id << " \n";
 
     string base = "partition_" + to_string(partition_id) + "_";
     ofstream comp_out(base + "components.txt");
@@ -837,7 +837,7 @@ vector<Seed> select_best_k_seeds(vector<Seed>& final_seeds, int k)
 
 vector<Seed> process_partition(int p, const vector<DirectedEdge>& remapped_edges, map<int, int>& node_to_index, map<int, int>& index_to_node)
 {
-    cout << "-------------------------- Partition " << p << " ------------------------------" << endl;
+    cout << "-------------------------- Partition " << p << " Processing ------------------------------" << endl;
     SCC_CAC_partition(remapped_edges, node_to_index.size());
     display_partition_results(index_to_node, vertices, remapped_edges, node_to_index, p);
 
@@ -864,8 +864,6 @@ int main(int argc, char** argv) {
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
-
-    cout << "Rank: " << rank << ", Total Processes: " << size << endl;
 
     const int nparts = size;
     int k = 3;
