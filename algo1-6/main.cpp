@@ -34,6 +34,9 @@ struct DirectedEdge
 struct Seed {
     int id;
     double influence;
+    
+    Seed(int id, double influence) : id(id), influence(influence) {}
+    Seed(){}
 };
 
 struct Vertex
@@ -820,13 +823,13 @@ vector<Seed> select_best_k_seeds(vector<Seed>& final_seeds, int k)
 
     sort(seed_scores.begin(), seed_scores.end(),
          [](const Seed& a, const Seed& b) {
-             return a.second > b.second;
+             return a.influence > b.influence;
          });
 
     vector<Seed> best_k_seeds;
     for (int i = 0; i < k && i < seed_scores.size(); ++i)
     {
-        best_k_seeds.emplace_back(seed_scores[i].is, seed_scores[i].influence);
+        best_k_seeds.emplace_back(seed_scores[i].id, seed_scores[i].influence);
     }
 
     return best_k_seeds;
@@ -970,6 +973,7 @@ int main(int argc, char** argv) {
     // ---------------------------- SLAVES ----------------------------
     else {
         int edge_count;
+        cout<<"For rank "<<rank<<" entered else to recv"<<endl;
         MPI_Recv(&edge_count, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         vector<DirectedEdge> edges(edge_count);
         MPI_Recv(edges.data(), edge_count, MPI_DirectedEdge, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
