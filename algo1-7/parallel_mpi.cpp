@@ -865,7 +865,7 @@ int main(int argc, char** argv)
     const string filename = "gnutella_dataset.txt";
     vector<Seed> all_final_seeds;
 
-    // ----------------- MPI Datatype for DirectedEdge ----------------
+    // ----------------- MPI Datatype for DirectedEdge (5 ints) ----------------
     MPI_Datatype MPI_DirectedEdge;
     DirectedEdge tmp_edge;
     int block_lengths[6] = {1, 1, 1, 1, 1, 1};
@@ -995,6 +995,6 @@ int main(int argc, char** argv)
     cout << "Execution time: " << elapsed.count() << " seconds" << std::endl;
     cout << "---------------------------------------------------------------------" << endl;
     cout << "---------------------------- End of Program -------------------------" << endl;
-    
+
     return 0;
 }
