@@ -14,8 +14,8 @@
 #include <cmath>
 #include <omp.h>
 #include <climits>
+#include <mpi.h>
 #include <chrono>
-
 
 #define MAX_TOPICS 10
 #define DAMPING 0.85
@@ -29,6 +29,15 @@ struct DirectedEdge
     int from, to;
     int retweet, reply, mention;
     int partition;
+};
+
+struct Seed
+{
+    int id;
+    double influence;
+    
+    Seed(int id, double influence) : id(id), influence(influence) {}
+    Seed(){}
 };
 
 struct Vertex
@@ -74,23 +83,11 @@ void dfs(int v);
 void discover(int v);
 void explore(int v);
 void finish(int v);
+vector<vector<DirectedEdge>> run_metis_partitioning(const string &filename, int nparts, set<int> partition_nodes[]);
+vector<DirectedEdge> remap_partition_edges(const vector<DirectedEdge> &edges, const vector<int> &nodes, map<int, int> &node_to_index, map<int, int> &index_to_node);
+void display_partition_results(const map<int, int> &index_to_node, const vector<Vertex> &vertices, const vector<DirectedEdge> &remapped_edges, const map<int, int> &node_to_index, int partition_id);
 
-vector<vector<DirectedEdge>> run_metis_partitioning(
-    const string &filename,
-    int nparts,
-    set<int> partition_nodes[]);
-vector<DirectedEdge> remap_partition_edges(
-    const vector<DirectedEdge> &edges,
-    const vector<int> &nodes,
-    map<int, int> &node_to_index,
-    map<int, int> &index_to_node);
-void display_partition_results(
-    const map<int, int> &index_to_node,
-    const vector<Vertex> &vertices,
-    const vector<DirectedEdge> &remapped_edges,
-    const map<int, int> &node_to_index,
-    int partition_id);
-
+// Algorithm 1-4 and METIS functions
 void discover(int v)
 {
     vertices[v].index = index_counter;
@@ -222,10 +219,7 @@ void SCC_CAC_partition(const std::vector<DirectedEdge> &edges, int n)
     }
 }
 
-vector<vector<DirectedEdge>> run_metis_partitioning(
-    const string &filename,
-    int nparts,
-    set<int> partition_nodes[])
+vector<vector<DirectedEdge>> run_metis_partitioning(const string &filename, int nparts, set<int> partition_nodes[])
 {
     ifstream file(filename);
     if (!file.is_open())
@@ -298,11 +292,7 @@ vector<vector<DirectedEdge>> run_metis_partitioning(
     return partitioned_edges;
 }
 
-vector<DirectedEdge> remap_partition_edges(
-    const vector<DirectedEdge> &edges,
-    const set<int> &node_ids,
-    map<int, int> &node_to_index_out,
-    map<int, int> &index_to_node_out)
+vector<DirectedEdge> remap_partition_edges(const vector<DirectedEdge> &edges, const set<int> &node_ids, map<int, int> &node_to_index_out, map<int, int> &index_to_node_out)
 {
     int index = 0;
 
@@ -327,12 +317,7 @@ vector<DirectedEdge> remap_partition_edges(
     return remapped_edges;
 }
 
-void display_partition_results(
-    const map<int, int> &index_to_node,
-    const vector<Vertex> &vertices,
-    const vector<DirectedEdge> &remapped_edges,
-    const map<int, int> &node_to_index,
-    int partition_id)
+void display_partition_results(const map<int, int> &index_to_node, const vector<Vertex> &vertices, const vector<DirectedEdge> &remapped_edges, const map<int, int> &node_to_index, int partition_id)
 {
 
     string base = "partition_" + to_string(partition_id) + "_";
@@ -348,6 +333,7 @@ void display_partition_results(
 
         if (vertices[i].comp != -1)
         {
+
             comp_out << real_node << " " << vertices[i].comp << "\n";
 
             if (component_written.find(vertices[i].comp) == component_written.end())
@@ -376,6 +362,23 @@ void display_partition_results(
     edge_out.close();
 }
 
+void write_activity_file(const vector<DirectedEdge>& remapped_edges, const map<int, int>& index_to_node, const string& filename)
+{
+    ofstream f(filename);
+    for (const auto& edge : remapped_edges) {
+        int from = index_to_node.at(edge.from);
+        int to = index_to_node.at(edge.to);
+        for (int i = 0; i < edge.retweet; ++i)
+            f << from << " " << to << " RT" << endl;
+        for (int i = 0; i < edge.reply; ++i)
+            f << from << " " << to << " RE" << endl;
+        for (int i = 0; i < edge.mention; ++i)
+            f << from << " " << to << " MT" << endl;
+    }
+    f.close();
+}
+
+// Algorithm 5-6 functions
 double get_action_weight(const string &act)
 {
     if (act == "RT")
@@ -436,7 +439,7 @@ void load_activity(const string &file)
     int u, v;
     long ts;
     string act;
-    while (f >> u >> v >> ts >> act)
+    while (f >> u >> v >> act)
     {
         if (act == "RT")
             action_map[u][v].RT++;
@@ -613,17 +616,17 @@ unordered_map<int, double> compute_IL(int v)
     return IL;
 }
 
-vector<pair <int, double>> find_seed_candidates()
+vector<Seed> find_seed_candidates()
 {
-    vector<pair <int, double>> seeds_scores;
+    vector<Seed> seeds_scores;
 
-    for (const auto &[v, _] : IP)
+    for (const auto& [v, _] : IP)
     {
         unordered_map<int, double> IL = compute_IL(v);
 
         vector<int> gamma;
         int max_lvl = 0;
-        for (const auto &[lvl, _] : IL)
+        for (const auto& [lvl, _] : IL)
         {
             if (lvl > max_lvl)
                 max_lvl = lvl;
@@ -641,7 +644,6 @@ vector<pair <int, double>> find_seed_candidates()
         }
 
         int L0 = gamma.empty() ? max_lvl : *min_element(gamma.begin(), gamma.end());
-
         double IL0 = IL.count(L0) ? IL[L0] : 0.0;
 
         if (IP[v] > IL0)
@@ -666,6 +668,7 @@ void clear_maps()
     followers.clear();
 }
 
+// Algorithm 7 functions
 BFS_Tree influence_bfs_tree(int seed, const unordered_set<int> &seed_set)
 {
     BFS_Tree tree;
@@ -731,29 +734,26 @@ unordered_set<int> extract_blackpath(const BFS_Tree &tree, const unordered_set<i
     return blackpath;
 }
 
-vector<pair<int, double>> seed_selection_algorithm(const vector<pair<int, double>> &seeds)
+vector<Seed> seed_selection_algorithm(const vector<Seed>& seeds)
 {
     unordered_set<int> seed_set;
-    vector<pair<int, double>> final_seeds_scores;
+    vector<Seed> final_seeds_scores;
 
-    // Step 1: build all initial influence-BFS trees
     unordered_map<int, BFS_Tree> bfs_trees;
-    for (const auto &[seed, _] : seeds)
+    for (const auto& [seed, _] : seeds)
     {
         seed_set.insert(seed);
         bfs_trees[seed] = influence_bfs_tree(seed, seed_set);
     }
 
-    // Step 2: repeat until no seeds remain
     while (!seed_set.empty())
     {
-        // Step 3: find seed that has largest influence tree
         int max_seed = -1;
         size_t max_size = 0;
 
-        for (const auto &[seed, tree] : bfs_trees)
+        for (const auto& [seed, tree] : bfs_trees)
         {
-            size_t size = tree.parent.size(); // total nodes in the tree
+            size_t size = tree.parent.size();
             if (size > max_size && seed_set.count(seed))
             {
                 max_size = size;
@@ -762,14 +762,11 @@ vector<pair<int, double>> seed_selection_algorithm(const vector<pair<int, double
         }
 
         if (max_seed == -1)
-            break; // no valid seeds left
+            break;
 
-        const BFS_Tree &largest_tree = bfs_trees[max_seed];
-
-        // Step 4: get blackpath of this tree
+        const BFS_Tree& largest_tree = bfs_trees[max_seed];
         unordered_set<int> blackpath = extract_blackpath(largest_tree, seed_set);
 
-        // Step 5: find tree rooted at each blackpath node and compute rank
         int min_rank_seed = -1;
         float min_rank = std::numeric_limits<float>::max();
         BFS_Tree best_tree;
@@ -778,7 +775,6 @@ vector<pair<int, double>> seed_selection_algorithm(const vector<pair<int, double
         {
             BFS_Tree tree = bfs_trees[black_node];
             float rank = compute_rank(tree);
-
 
             if (rank < min_rank)
             {
@@ -792,11 +788,10 @@ vector<pair<int, double>> seed_selection_algorithm(const vector<pair<int, double
         {
             final_seeds_scores.emplace_back(min_rank_seed, IP[min_rank_seed]);
 
-            // Remove all blackpath nodes of this best_tree from seed_set
             for (int node : blackpath)
             {
                 seed_set.erase(node);
-                bfs_trees.erase(node); // also remove its BFS tree if exists
+                bfs_trees.erase(node);
             }
         }
     }
@@ -804,113 +799,202 @@ vector<pair<int, double>> seed_selection_algorithm(const vector<pair<int, double
     return final_seeds_scores;
 }
 
-
-
-vector<pair <int, double>> select_best_k_seeds(vector<pair <int, double>> &final_seeds, int k)
+vector<Seed> select_best_k_seeds(vector<Seed>& final_seeds, int k)
 {
-    vector<pair<int, double>> seed_scores;
-    for (const auto &[seed, score] : final_seeds)
+    vector<Seed> seed_scores;
+    for (const auto& [seed, score] : final_seeds)
     {
         seed_scores.emplace_back(seed, score);
     }
 
-    // Sort seeds by their scores in descending order
     sort(seed_scores.begin(), seed_scores.end(),
-         [](const pair<int, double> &a, const pair<int, double> &b) {
-             return a.second > b.second;
+         [](const Seed& a, const Seed& b) {
+             return a.influence > b.influence;
          });
 
-    // Select top k seeds
-    vector<pair <int, double>> best_k_seeds;
+    vector<Seed> best_k_seeds;
     for (int i = 0; i < k && i < seed_scores.size(); ++i)
     {
-        best_k_seeds.emplace_back(seed_scores[i].first, seed_scores[i].second);
+        best_k_seeds.emplace_back(seed_scores[i].id, seed_scores[i].influence);
     }
 
     return best_k_seeds;
 }
 
-int main()
+vector<Seed> process_partition(int p, const vector<DirectedEdge>& remapped_edges, map<int, int>& node_to_index, map<int, int>& index_to_node)
 {
-    const string filename = "gnutella_dataset.txt";
-    int nparts = 2;
-    int k = 1;
-    cout << "---------------------------------------------------------------------" << endl;
-    cout << "Enter the number of influencers you want to find: ", cin >> k;
-    cout << "Enter the number of partition you want to divide the graph into: ", cin >> nparts;
-    while (nparts < 2)
-    {
-        cout << "Number of partitions must be greater than 1. Please enter again: ", cin >> nparts;
-    }
-    cout << "---------------------------------------------------------------------" << endl;
-    cout << endl;
-    cout << endl;
+    cout << "-------------------------- Partition " << p << " Processing ------------------------------" << endl;
+    SCC_CAC_partition(remapped_edges, node_to_index.size());
+    display_partition_results(index_to_node, vertices, remapped_edges, node_to_index, p);
+
+    string base = "partition_" + to_string(p) + "_";
+    load_interest("interest.txt");
+    load_graph(base + "edges.txt");
+    load_activity("activity.txt");
+    load_component_map(base + "components.txt");
+    load_component_levels(base + "component_levels.txt");
+    initialize_ip();
+    calculate_influence_power();
+
+    vector<Seed> seeds = find_seed_candidates();
+    vector<Seed> final_seeds = seed_selection_algorithm(seeds);
+
+    clear_maps();
+    return final_seeds;
+}
+
+// Main function
+int main(int argc, char** argv)
+{
     auto start_time = chrono::high_resolution_clock::now();
-    set<int> partition_nodes[nparts];
-    vector<vector<DirectedEdge>> partitioned_edges = run_metis_partitioning(filename, nparts, partition_nodes);
-    
-    vector<pair <int, double>> all_final_seeds;
+    MPI_Init(&argc, &argv);
 
-    for (int p = 0; p < nparts; ++p)
-    {
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-        map<int, int> node_to_index;
-        map<int, int> index_to_node;
+    const int nparts = size;
+    int k = 3;
 
+    if (size < 2) {
+        cerr << "This program requires at least 2 processes." << endl;
+        MPI_Finalize();
+        return 1;
+    }
+
+    const string filename = "gnutella_dataset.txt";
+    vector<Seed> all_final_seeds;
+
+    // ----------------- MPI Datatype for DirectedEdge ----------------
+    MPI_Datatype MPI_DirectedEdge;
+    DirectedEdge tmp_edge;
+    int block_lengths[6] = {1, 1, 1, 1, 1, 1};
+    MPI_Datatype types[6] = {MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT};
+    MPI_Aint displacements[6];
+    MPI_Aint base_addr;
+
+    MPI_Get_address(&tmp_edge, &base_addr);
+    MPI_Get_address(&tmp_edge.from, &displacements[0]);
+    MPI_Get_address(&tmp_edge.to, &displacements[1]);
+    MPI_Get_address(&tmp_edge.retweet, &displacements[2]);
+    MPI_Get_address(&tmp_edge.reply, &displacements[3]);
+    MPI_Get_address(&tmp_edge.mention, &displacements[4]);
+    MPI_Get_address(&tmp_edge.partition, &displacements[5]);
+
+    for (int i = 0; i < 6; ++i)
+        displacements[i] -= base_addr;
+
+    MPI_Type_create_struct(6, block_lengths, displacements, types, &MPI_DirectedEdge);
+    MPI_Type_commit(&MPI_DirectedEdge);
+
+
+    // ----------------- MPI Datatype for Seed (pair<int, double>) ----------------
+    MPI_Datatype MPI_Seed;
+    Seed tmp_seed;
+    int seed_block_lengths[2] = {1, 1};
+    MPI_Datatype seed_types[2] = {MPI_INT, MPI_DOUBLE};
+    MPI_Aint seed_displacements[2];
+    MPI_Aint base_addr_seed;
+
+    MPI_Get_address(&tmp_seed, &base_addr_seed);
+    MPI_Get_address(&tmp_seed.id, &seed_displacements[0]);
+    MPI_Get_address(&tmp_seed.influence, &seed_displacements[1]);
+
+    for (int i = 0; i < 2; ++i)
+        seed_displacements[i] -= base_addr_seed;
+
+    MPI_Type_create_struct(2, seed_block_lengths, seed_displacements, seed_types, &MPI_Seed);
+    MPI_Type_commit(&MPI_Seed);
+
+    // ---------------------------- MASTER ----------------------------
+    if (rank == 0) {
+        set<int> partition_nodes[nparts];
+        vector<vector<DirectedEdge>> partitioned_edges =
+            run_metis_partitioning(filename, nparts, partition_nodes);
+
+        for (int p = 1; p < nparts; ++p) {
+            int edge_count = partitioned_edges[p].size();
+            MPI_Send(&edge_count, 1, MPI_INT, p, 0, MPI_COMM_WORLD);
+            MPI_Send(partitioned_edges[p].data(), edge_count, MPI_DirectedEdge, p, 1, MPI_COMM_WORLD);
+
+            int node_count = partition_nodes[p].size();
+            vector<int> nodes(partition_nodes[p].begin(), partition_nodes[p].end());
+            MPI_Send(&node_count, 1, MPI_INT, p, 2, MPI_COMM_WORLD);
+            MPI_Send(nodes.data(), node_count, MPI_INT, p, 3, MPI_COMM_WORLD);
+        }
+
+        // Process Partition 0
+        set<int> node_set = partition_nodes[0];
+        map<int, int> node_to_index, index_to_node;
         vector<DirectedEdge> remapped_edges =
-            remap_partition_edges(partitioned_edges[p], partition_nodes[p], node_to_index, index_to_node);
+            remap_partition_edges(partitioned_edges[0], node_set, node_to_index, index_to_node);
 
-        if (remapped_edges.empty())
-        {
-            cout << "-------------------------- Partition " << p << " ------------------------------" << endl;
-            cout << "No edges in this partition " << endl;
-            cout << "---------------------------------------------------------------------" << endl;
-            cout << endl;
-            continue;
-        }
-        else
-        {
-            cout << "-------------------------- Partition " << p << " ------------------------------" << endl;
-            SCC_CAC_partition(remapped_edges, node_to_index.size());
-
-            display_partition_results(index_to_node, vertices, remapped_edges, node_to_index, p);
-
-            string base = "partition_" + to_string(p) + "_";
-            load_interest("interest.txt");
-            load_graph(base + "edges.txt");
-            load_activity("activity.txt");
-            load_component_map(base + "components.txt");
-            load_component_levels(base + "component_levels.txt");
-            initialize_ip();
-            calculate_influence_power();
-            //output_IP();
-            vector<pair <int, double>> seeds = find_seed_candidates();
-            vector<pair <int, double>> final_seeds = seed_selection_algorithm(seeds);
+        if (!remapped_edges.empty()) {
+            vector<Seed> final_seeds =
+                process_partition(0, remapped_edges, node_to_index, index_to_node);
             all_final_seeds.insert(all_final_seeds.end(), final_seeds.begin(), final_seeds.end());
-            clear_maps();
+        } else {
+            cout << "Partition 0 has no edges.\n";
         }
 
-    }
-    cout << "---------------- Final Influencers User Selected --------------------" << endl;
-    if (all_final_seeds.empty())
-    {
-        cout << "No influencers found." << endl;
-    }
-    else
-    {
-        vector<pair <int, double>> best_k_seeds = select_best_k_seeds(all_final_seeds, k);
-        for (const auto &[seed, score] : best_k_seeds)
-        {
-            cout << "User " << seed << " with IP " << score << endl;
+        // Receive results from slaves
+        for (int p = 1; p < nparts; ++p) {
+            int seed_count;
+            MPI_Recv(&seed_count, 1, MPI_INT, p, 4, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            vector<Seed> seeds(seed_count);
+            MPI_Recv(seeds.data(), seed_count, MPI_Seed, p, 5, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            all_final_seeds.insert(all_final_seeds.end(), seeds.begin(), seeds.end());
         }
+
+        // Output results
+        cout << "---------------- Final Influencers User Selected --------------------" << endl;
+        if (all_final_seeds.empty()) {
+            cout << "No influencers found." << endl;
+        } else {
+            vector<Seed> best_k_seeds = select_best_k_seeds(all_final_seeds, k);
+            for (const auto &[id, score] : best_k_seeds) {
+                cout << "User " << id << " with IP " << score << endl;
+            }
+        }
+        cout << "---------------------------------------------------------------------" << endl;
     }
-    cout << "---------------------------------------------------------------------" << endl;
+    // ---------------------------- SLAVES ----------------------------
+    else {
+        int edge_count;
+        MPI_Recv(&edge_count, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        vector<DirectedEdge> edges(edge_count);
+        MPI_Recv(edges.data(), edge_count, MPI_DirectedEdge, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+        int node_count;
+        MPI_Recv(&node_count, 1, MPI_INT, 0, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        vector<int> nodes(node_count);
+        MPI_Recv(nodes.data(), node_count, MPI_INT, 0, 3, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        set<int> node_set(nodes.begin(), nodes.end());
+
+        map<int, int> node_to_index, index_to_node;
+        vector<DirectedEdge> remapped_edges =
+            remap_partition_edges(edges, node_set, node_to_index, index_to_node);
+
+        vector<Seed> final_seeds;
+        if (!remapped_edges.empty()) {
+            final_seeds = process_partition(rank, remapped_edges, node_to_index, index_to_node);
+        }
+
+        int seed_count = final_seeds.size();
+        MPI_Send(&seed_count, 1, MPI_INT, 0, 4, MPI_COMM_WORLD);
+        MPI_Send(final_seeds.data(), seed_count, MPI_Seed, 0, 5, MPI_COMM_WORLD);
+    }
+
+    // ---------------------------- Cleanup ----------------------------
+    MPI_Type_free(&MPI_DirectedEdge);
+    MPI_Type_free(&MPI_Seed);
+    MPI_Finalize();
 
     auto end_time = chrono::high_resolution_clock::now();
     chrono::duration<double> elapsed = end_time - start_time;
     cout << "Execution time: " << elapsed.count() << " seconds" << std::endl;
     cout << "---------------------------------------------------------------------" << endl;
     cout << "---------------------------- End of Program -------------------------" << endl;
-
+    
     return 0;
 }

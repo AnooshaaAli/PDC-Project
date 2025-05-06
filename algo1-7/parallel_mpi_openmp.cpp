@@ -31,7 +31,8 @@ struct DirectedEdge
     int partition;
 };
 
-struct Seed {
+struct Seed
+{
     int id;
     double influence;
     
@@ -88,7 +89,6 @@ vector<DirectedEdge> remap_partition_edges(const vector<DirectedEdge> &edges, co
 void display_partition_results(const map<int, int> &index_to_node, const vector<Vertex> &vertices, const vector<DirectedEdge> &remapped_edges, const map<int, int> &node_to_index, int partition_id);
 
 // Algorithm 1-4 and METIS functions
-
 void discover(int v)
 {
     vertices[v].index = index_counter;
@@ -320,7 +320,6 @@ vector<DirectedEdge> remap_partition_edges(const vector<DirectedEdge> &edges, co
 
 void display_partition_results(const map<int, int> &index_to_node, const vector<Vertex> &vertices, const vector<DirectedEdge> &remapped_edges, const map<int, int> &node_to_index, int partition_id)
 {
-    //cout << "                   SCC/CAC for Partition " << partition_id << " \n";
 
     string base = "partition_" + to_string(partition_id) + "_";
     ofstream comp_out(base + "components.txt");
@@ -335,11 +334,6 @@ void display_partition_results(const map<int, int> &index_to_node, const vector<
 
         if (vertices[i].comp != -1)
         {
-            /*cout << "Vertex " << real_node
-                 << " | Comp: " << vertices[i].comp
-                 << " | Type: " << vertices[i].type
-                 << " | Level: " << vertices[i].level
-                 << " | Lowlink: " << vertices[i].lowlink << endl;*/
 
             comp_out << real_node << " " << vertices[i].comp << "\n";
 
@@ -349,7 +343,6 @@ void display_partition_results(const map<int, int> &index_to_node, const vector<
             }
         }
     }
-    //cout << "---------------------------------------------------------------------" << endl;
 
     for (const auto &[comp_id, level] : component_written)
     {
@@ -370,7 +363,8 @@ void display_partition_results(const map<int, int> &index_to_node, const vector<
     edge_out.close();
 }
 
-void write_activity_file(const vector<DirectedEdge>& remapped_edges, const map<int, int>& index_to_node, const string& filename) {
+void write_activity_file(const vector<DirectedEdge>& remapped_edges, const map<int, int>& index_to_node, const string& filename)
+{
     ofstream f(filename);
     for (const auto& edge : remapped_edges) {
         int from = index_to_node.at(edge.from);
@@ -386,7 +380,6 @@ void write_activity_file(const vector<DirectedEdge>& remapped_edges, const map<i
 }
 
 // Algorithm 5-6 functions
-
 double get_action_weight(const string &act)
 {
     if (act == "RT")
@@ -565,24 +558,24 @@ void calculate_influence_power()
 
     for (int level : levels)
     {
-        //cout << "Processing Level " << level << "...\n";
         const auto &comps = level_components[level];
-
+	    omp_set_num_threads(8);
+        #pragma omp parallel for
         for (int i = 0; i < comps.size(); ++i)
         {
+            int thread_id = omp_get_thread_num();
             compute_influence_power(component_nodes[comps[i]]);
         }
     }
-    //cout << "---------------------------------------------------------------------" << endl;
 }
 
 void output_IP()
 {
-    /*for (const auto &[u, ip] : IP)
+    for (const auto &[u, ip] : IP)
     {
         cout << "Node " << u << ": IP = " << ip << endl;
     }
-    cout << "---------------------------------------------------------------------" << endl;*/
+    cout << "---------------------------------------------------------------------" << endl;
 }
 
 unordered_map<int, double> compute_IL(int v)
@@ -667,7 +660,6 @@ vector<Seed> find_seed_candidates()
 
     return seeds_scores;
 }
-
 
 void clear_maps()
 {
@@ -857,8 +849,10 @@ vector<Seed> process_partition(int p, const vector<DirectedEdge>& remapped_edges
     return final_seeds;
 }
 
-
-int main(int argc, char** argv) {
+// Main function
+int main(int argc, char** argv)
+{
+    auto start_time = chrono::high_resolution_clock::now();
     MPI_Init(&argc, &argv);
 
     int rank, size;
@@ -1001,5 +995,12 @@ int main(int argc, char** argv) {
     MPI_Type_free(&MPI_DirectedEdge);
     MPI_Type_free(&MPI_Seed);
     MPI_Finalize();
+
+    auto end_time = chrono::high_resolution_clock::now();
+    chrono::duration<double> elapsed = end_time - start_time;
+    cout << "Execution time: " << elapsed.count() << " seconds" << std::endl;
+    cout << "---------------------------------------------------------------------" << endl;
+    cout << "---------------------------- End of Program -------------------------" << endl;
+
     return 0;
 }

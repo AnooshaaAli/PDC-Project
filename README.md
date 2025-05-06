@@ -1,6 +1,7 @@
 # PDC-Project
 A project for "Parallel and Distributed Computing" Course, which implements the algorithm proposed in the paper "PSAIIM: A Parallel Social Behavior-Based Algorithm for Identifying Influential Users in Social Networks" using MPI, METIS, and OpenMP
 A presentation on the research paper can be found at https://www.canva.com/design/DAGk6c0qZ6Q/Mb-doY3AA3b4VZWPEk1aUA/edit?utm_content=DAGk6c0qZ6Q&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton
+The main code of all algorithm can be found in algo1-7 folder
 
 ---
 
