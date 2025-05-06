@@ -909,6 +909,10 @@ int main(int argc, char** argv)
                 vector<double> influences(seed_count);
                 MPI_Recv(ids.data(), seed_count, MPI_INT, p, 8, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 MPI_Recv(influences.data(), seed_count, MPI_DOUBLE, p, 9, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                for (int i = 0; i < 5; ++i) {
+                    cout << "Reciveing and printing first 5 seed in master from process " << p << endl;
+                    cout << "Seed " << ids[i] << " with influence " << influences[i] << endl;
+                }
                 for (int i = 0; i < seed_count; ++i) {
                     all_final_seeds.push_back({ids[i], influences[i]});
                 }
@@ -964,6 +968,12 @@ int main(int argc, char** argv)
             for (int i = 0; i < seed_count; ++i) {
                 ids[i] = final_seeds[i].id;
                 influences[i] = final_seeds[i].influence;
+                cout << "Sending seed to master" << endl;
+                cout << "Seed " << ids[i] << " with influence " << influences[i] << endl;
+            }
+            for (int i = 0; i < 5; ++i) {
+                cout << "Sending seed to master" << endl;
+                cout << "Seed " << ids[i] << " with influence " << influences[i] << endl;
             }
             MPI_Send(ids.data(), seed_count, MPI_INT, 0, 8, MPI_COMM_WORLD);
             MPI_Send(influences.data(), seed_count, MPI_DOUBLE, 0, 9, MPI_COMM_WORLD);
