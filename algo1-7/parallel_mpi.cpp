@@ -901,7 +901,7 @@ int main(int argc, char** argv)
     }
 
     // Process local partition
-    vector<pair<int, double>> local_final_seeds;
+    vector<pair<Seed> local_final_seeds;
 
     if (!local_edges.empty()) {
         map<int, int> node_to_index;
@@ -957,7 +957,7 @@ int main(int argc, char** argv)
         if (all_final_seeds.empty()) {
             cout << "No influencers found." << endl;
         } else {
-            vector<pair<int, double>> best_k_seeds = select_best_k_seeds(all_final_seeds, k);
+            vector<pair<Seed> best_k_seeds = select_best_k_seeds(all_final_seeds, k);
             for (const auto &[seed, score] : best_k_seeds) {
                 cout << "User " << seed << " with IP " << score << endl;
             }
