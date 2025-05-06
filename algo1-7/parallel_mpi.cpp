@@ -846,131 +846,141 @@ vector<Seed> process_partition(int p, const vector<DirectedEdge>& remapped_edges
 // Main function
 int main(int argc, char** argv)
 {
+    auto start_time = chrono::high_resolution_clock::now();
     MPI_Init(&argc, &argv);
+
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    const string filename = "gnutella_dataset.txt";
-    int nparts = size;
+    const int nparts = size;
     int k = 3;
-    MPI_Bcast(&k, 1, MPI_INT, 0, MPI_COMM_WORLD); 
 
-    auto start_time = chrono::high_resolution_clock::now();
-
-    vector<vector<DirectedEdge>> partitioned_edges;
-    set<int> partition_nodes[nparts];
-
-    // Only rank 0 runs METIS and remaps
-    if (rank == 0) {
-        partitioned_edges = run_metis_partitioning(filename, nparts, partition_nodes);
+    if (size < 2) {
+        cerr << "This program requires at least 2 processes." << endl;
+        MPI_Finalize();
+        return 1;
     }
 
-    // Distribute each partitioned_edges[p] to process p
-    // First broadcast sizes
-    vector<int> edge_counts(size, 0);
-    vector<int> node_counts(size, 0);
+    const string filename = "gnutella_dataset.txt";
+    vector<Seed> all_final_seeds;
 
     if (rank == 0) {
-        for (int p = 0; p < nparts && p < size; ++p) {
-            edge_counts[p] = partitioned_edges[p].size();
-            node_counts[p] = partition_nodes[p].size();
+        set<int> partition_nodes[nparts];
+        vector<vector<DirectedEdge>> partitioned_edges =
+            run_metis_partitioning(filename, nparts, partition_nodes);
+
+        for (int p = 1; p < nparts; ++p) {
+            int edge_count = partitioned_edges[p].size();
+            MPI_Send(&edge_count, 1, MPI_INT, p, 0, MPI_COMM_WORLD);
+
+            vector<int> edge_data(edge_count * 6);
+            for (int i = 0; i < edge_count; ++i) {
+                edge_data[i * 6 + 0] = partitioned_edges[p][i].from;
+                edge_data[i * 6 + 1] = partitioned_edges[p][i].to;
+                edge_data[i * 6 + 2] = partitioned_edges[p][i].retweet;
+                edge_data[i * 6 + 3] = partitioned_edges[p][i].reply;
+                edge_data[i * 6 + 4] = partitioned_edges[p][i].mention;
+                edge_data[i * 6 + 5] = partitioned_edges[p][i].partition;
+            }
+            MPI_Send(edge_data.data(), edge_data.size(), MPI_INT, p, 1, MPI_COMM_WORLD);
+
+            int node_count = partition_nodes[p].size();
+            vector<int> nodes(partition_nodes[p].begin(), partition_nodes[p].end());
+            MPI_Send(&node_count, 1, MPI_INT, p, 2, MPI_COMM_WORLD);
+            MPI_Send(nodes.data(), node_count, MPI_INT, p, 3, MPI_COMM_WORLD);
         }
-    }
 
-    int local_edge_count = 0;
-    int local_node_count = 0;
-    MPI_Scatter(edge_counts.data(), 1, MPI_INT, &local_edge_count, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    MPI_Scatter(node_counts.data(), 1, MPI_INT, &local_node_count, 1, MPI_INT, 0, MPI_COMM_WORLD);
+        set<int> node_set = partition_nodes[0];
+        map<int, int> node_to_index, index_to_node;
+        vector<DirectedEdge> remapped_edges =
+            remap_partition_edges(partitioned_edges[0], node_set, node_to_index, index_to_node);
 
-    vector<DirectedEdge> local_edges(local_edge_count);
-    set<int> local_partition_nodes;
+        if (!remapped_edges.empty()) {
+            vector<Seed> final_seeds =
+                process_partition(0, remapped_edges, node_to_index, index_to_node);
+            all_final_seeds.insert(all_final_seeds.end(), final_seeds.begin(), final_seeds.end());
+        } else {
+            cout << "Partition 0 has no edges.\n";
+        }
 
-    // Send edges
-    if (rank == 0) {
-        for (int p = 0; p < nparts && p < size; ++p) {
-            if (p == 0) {
-                local_edges = partitioned_edges[0];
-            } else {
-                MPI_Send(partitioned_edges[p].data(), edge_counts[p] * sizeof(DirectedEdge), MPI_BYTE, p, 0, MPI_COMM_WORLD);
+        for (int p = 1; p < nparts; ++p) {
+            int seed_count;
+            MPI_Recv(&seed_count, 1, MPI_INT, p, 4, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            vector<int> seed_ids(seed_count);
+            vector<double> seed_influence(seed_count);
+            MPI_Recv(seed_ids.data(), seed_count, MPI_INT, p, 5, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv(seed_influence.data(), seed_count, MPI_DOUBLE, p, 6, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            for (int i = 0; i < seed_count; ++i) {
+                all_final_seeds.push_back({seed_ids[i], seed_influence[i]});
             }
         }
-    } else {
-        if (local_edge_count > 0)
-            MPI_Recv(local_edges.data(), local_edge_count * sizeof(DirectedEdge), MPI_BYTE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    }
 
-    // Process local partition
-    vector<Seed> local_final_seeds;
-
-    if (!local_edges.empty()) {
-        map<int, int> node_to_index;
-        map<int, int> index_to_node;
-
-        vector<DirectedEdge> remapped_edges =
-            remap_partition_edges(local_edges, partition_nodes[rank], node_to_index, index_to_node);
-
-        cout << "-------------------------- Partition " << rank << " ------------------------------" << endl;
-        SCC_CAC_partition(remapped_edges, node_to_index.size());
-        display_partition_results(index_to_node, vertices, remapped_edges, node_to_index, rank);
-
-        string base = "partition_" + to_string(rank) + "_";
-        load_interest("interest.txt");
-        load_graph(base + "edges.txt");
-        load_activity("activity.txt");
-        load_component_map(base + "components.txt");
-        load_component_levels(base + "component_levels.txt");
-        initialize_ip();
-        calculate_influence_power();
-        vector<Seed> seeds = find_seed_candidates();
-        local_final_seeds = seed_selection_algorithm(seeds);
-
-        for (int i = 0; i < min(5, (int)local_final_seeds.size()); ++i) {
-            cout << "Seed " << local_final_seeds[i].id << " with influence " << local_final_seeds[i].influence << endl;
-        }
-
-        clear_maps();
-    }
-
-    // Gather results to rank 0
-    int local_seed_count = local_final_seeds.size();
-    vector<int> recv_counts(size);
-    MPI_Gather(&local_seed_count, 1, MPI_INT, recv_counts.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-    vector<Seed> all_final_seeds;
-    vector<int> displs(size, 0);
-    if (rank == 0) {
-        int total = 0;
-        for (int i = 0; i < size; ++i) {
-            displs[i] = total;
-            total += recv_counts[i];
-        }
-        all_final_seeds.resize(displs[size - 1] + recv_counts[size - 1]);
-    }
-
-    MPI_Gatherv(local_final_seeds.data(), local_seed_count * sizeof(pair<int, double>), MPI_BYTE,
-                all_final_seeds.data(), recv_counts.data(), displs.data(), MPI_BYTE,
-                0, MPI_COMM_WORLD);
-
-    if (rank == 0) {
         cout << "---------------- Final Influencers User Selected --------------------" << endl;
         if (all_final_seeds.empty()) {
             cout << "No influencers found." << endl;
         } else {
             vector<Seed> best_k_seeds = select_best_k_seeds(all_final_seeds, k);
-            for (const auto &[seed, score] : best_k_seeds) {
-                cout << "User " << seed << " with IP " << score << endl;
+            for (const auto &[id, score] : best_k_seeds) {
+                cout << "User " << id << " with IP " << score << endl;
             }
         }
         cout << "---------------------------------------------------------------------" << endl;
+    }
+    else {
+        int edge_count;
+        MPI_Recv(&edge_count, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-        auto end_time = chrono::high_resolution_clock::now();
-        chrono::duration<double> elapsed = end_time - start_time;
-        cout << "Execution time: " << elapsed.count() << " seconds" << std::endl;
-        cout << "---------------------------------------------------------------------" << endl;
-        cout << "---------------------------- End of Program -------------------------" << endl;
+        vector<int> edge_data(edge_count * 6);
+        MPI_Recv(edge_data.data(), edge_data.size(), MPI_INT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        vector<DirectedEdge> edges(edge_count);
+        for (int i = 0; i < edge_count; ++i) {
+            edges[i].from = edge_data[i * 6 + 0];
+            edges[i].to = edge_data[i * 6 + 1];
+            edges[i].retweet = edge_data[i * 6 + 2];
+            edges[i].reply = edge_data[i * 6 + 3];
+            edges[i].mention = edge_data[i * 6 + 4];
+            edges[i].partition = edge_data[i * 6 + 5];
+        }
+
+        int node_count;
+        MPI_Recv(&node_count, 1, MPI_INT, 0, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        vector<int> nodes(node_count);
+        MPI_Recv(nodes.data(), node_count, MPI_INT, 0, 3, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        set<int> node_set(nodes.begin(), nodes.end());
+
+        map<int, int> node_to_index, index_to_node;
+        vector<DirectedEdge> remapped_edges =
+            remap_partition_edges(edges, node_set, node_to_index, index_to_node);
+
+        vector<Seed> final_seeds;
+        if (!remapped_edges.empty()) {
+            final_seeds = process_partition(rank, remapped_edges, node_to_index, index_to_node);
+        }
+
+        int seed_count = final_seeds.size();
+        MPI_Send(&seed_count, 1, MPI_INT, 0, 4, MPI_COMM_WORLD);
+
+        vector<int> seed_ids(seed_count);
+        vector<double> seed_influence(seed_count);
+        for (int i = 0; i < seed_count; ++i) {
+            seed_ids[i] = final_seeds[i].id;
+            seed_influence[i] = final_seeds[i].influence;
+        }
+
+        MPI_Send(seed_ids.data(), seed_count, MPI_INT, 0, 5, MPI_COMM_WORLD);
+        MPI_Send(seed_influence.data(), seed_count, MPI_DOUBLE, 0, 6, MPI_COMM_WORLD);
     }
 
     MPI_Finalize();
+
+    auto end_time = chrono::high_resolution_clock::now();
+    chrono::duration<double> elapsed = end_time - start_time;
+    cout << "Execution time: " << elapsed.count() << " seconds" << std::endl;
+    cout << "---------------------------------------------------------------------" << endl;
+    cout << "---------------------------- End of Program -------------------------" << endl;
+
     return 0;
 }
