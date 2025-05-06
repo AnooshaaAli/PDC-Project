@@ -894,9 +894,12 @@ int main(int argc, char** argv)
             }
         }
 
-        // Process partition 0 locally
+        map<int, int> node_to_index;
+        map<int, int> index_to_node;
+
+        // For local partition 0
         if (!partitioned_edges[0].empty()) {
-            vector<Seed> final_seeds = process_partition(0, partitioned_edges[0]);
+            vector<Seed> final_seeds = process_partition(0, partitioned_edges[0], node_to_index, index_to_node);
             all_final_seeds.insert(all_final_seeds.end(), final_seeds.begin(), final_seeds.end());
         }
 
@@ -953,11 +956,13 @@ int main(int argc, char** argv)
                 edges.push_back({from[i], to[i], retweet[i], reply[i], mention[i], partition[i]});
             }
         }
-
+        // For non-root processes (e.g., MPI ranks > 0)
         vector<Seed> final_seeds;
         if (!edges.empty()) {
-            final_seeds = process_partition(rank, edges);
-        }
+            map<int, int> local_node_to_index;
+            map<int, int> local_index_to_node;
+            final_seeds = process_partition(rank, edges, local_node_to_index, local_index_to_node);
+}
 
         int seed_count = final_seeds.size();
         MPI_Send(&seed_count, 1, MPI_INT, 0, 7, MPI_COMM_WORLD);
