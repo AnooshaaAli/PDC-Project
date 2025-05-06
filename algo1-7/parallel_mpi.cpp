@@ -922,7 +922,7 @@ int main(int argc, char** argv)
         load_component_levels(base + "component_levels.txt");
         initialize_ip();
         calculate_influence_power();
-        vector<pair<Seed> seeds = find_seed_candidates();
+        vector<Seed> seeds = find_seed_candidates();
         local_final_seeds = seed_selection_algorithm(seeds);
 
         for (int i = 0; i < min(5, (int)local_final_seeds.size()); ++i) {
