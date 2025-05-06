@@ -844,16 +844,6 @@ vector<Seed> process_partition(int p, const vector<DirectedEdge>& remapped_edges
 }
 
 // Main function
-#include <mpi.h>
-#include <iostream>
-#include <vector>
-#include <map>
-#include <set>
-#include <chrono>
-using namespace std;
-
-// Assume your required headers, DirectedEdge, seed selection functions, and METIS tools are all included
-
 int main(int argc, char** argv)
 {
     MPI_Init(&argc, &argv);
@@ -862,8 +852,9 @@ int main(int argc, char** argv)
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
     const string filename = "gnutella_dataset.txt";
-    int nparts = size, 
+    int nparts = size;
     int k = 3;
+    MPI_Bcast(&k, 1, MPI_INT, 0, MPI_COMM_WORLD); 
 
     auto start_time = chrono::high_resolution_clock::now();
 
@@ -931,7 +922,7 @@ int main(int argc, char** argv)
         load_component_levels(base + "component_levels.txt");
         initialize_ip();
         calculate_influence_power();
-        vector<pair<int, double>> seeds = find_seed_candidates();
+        vector<pair<Seed> seeds = find_seed_candidates();
         local_final_seeds = seed_selection_algorithm(seeds);
 
         for (int i = 0; i < min(5, (int)local_final_seeds.size()); ++i) {
