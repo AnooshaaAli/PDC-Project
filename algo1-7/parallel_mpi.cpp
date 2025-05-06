@@ -981,6 +981,9 @@ int main(int argc, char** argv)
         }
 
         int seed_count = final_seeds.size();
+	int rank ;
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	cout << "Processor " << rank << " sending back seed " << seed_count << endl;
         MPI_Send(&seed_count, 1, MPI_INT, 0, 4, MPI_COMM_WORLD);
         MPI_Send(final_seeds.data(), seed_count, MPI_Seed, 0, 5, MPI_COMM_WORLD);
     }
