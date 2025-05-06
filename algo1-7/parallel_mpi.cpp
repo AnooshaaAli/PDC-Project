@@ -926,7 +926,7 @@ int main(int argc, char** argv)
         local_final_seeds = seed_selection_algorithm(seeds);
 
         for (int i = 0; i < min(5, (int)local_final_seeds.size()); ++i) {
-            cout << "Seed " << local_final_seeds[i].first << " with influence " << local_final_seeds[i].second << endl;
+            cout << "Seed " << local_final_seeds[i].id << " with influence " << local_final_seeds[i].influence << endl;
         }
 
         clear_maps();
@@ -937,7 +937,7 @@ int main(int argc, char** argv)
     vector<int> recv_counts(size);
     MPI_Gather(&local_seed_count, 1, MPI_INT, recv_counts.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-    vector<pair<int, double>> all_final_seeds;
+    vector<Seed> all_final_seeds;
     vector<int> displs(size, 0);
     if (rank == 0) {
         int total = 0;
