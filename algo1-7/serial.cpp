@@ -861,6 +861,7 @@ int main()
             calculate_influence_power();
             vector<pair <int, double>> seeds = find_seed_candidates();
             vector<pair <int, double>> final_seeds = seed_selection_algorithm(seeds);
+            cout << "processs " << p << " send seeds " << final_seeds.size() << endl;
             all_final_seeds.insert(all_final_seeds.end(), final_seeds.begin(), final_seeds.end());
             clear_maps();
         }
